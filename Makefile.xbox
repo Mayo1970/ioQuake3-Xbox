@@ -17,6 +17,7 @@ SRCS = \
 	$(CURDIR)/code/sys/xbox_snd.c \
 	$(CURDIR)/code/sys/xbox_snd_engine.c \
 	$(CURDIR)/code/sys/xbox_ref.c \
+	$(CURDIR)/code/renderernv2a/xbox_nv2a.c \
 	$(CURDIR)/code/sys/xbox_qcommon.c \
 	$(CURDIR)/code/qcommon/cm_load.c \
 	$(CURDIR)/code/qcommon/cm_patch.c \
@@ -78,6 +79,9 @@ NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DIOQUAKE3_XBOX_SHELL -DBOTLIB -DC_ONLY -O
 	-I/usr/src/nxdk/lib/net/lwip/src/include \
 	-I/usr/src/nxdk/lib/net/lwip/src/include/compat/posix
 NXDK_NET = y
+SHADER_OBJS = \
+	$(CURDIR)/code/renderernv2a/xbox_nv2a_vp.inl \
+	$(CURDIR)/code/renderernv2a/xbox_nv2a_fp.inl
 
 # The native XID and AC97 services remain independent of the client engine.
 # nxdk's base USB library includes the XID driver.

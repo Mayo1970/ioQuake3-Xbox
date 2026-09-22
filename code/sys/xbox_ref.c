@@ -1,22 +1,21 @@
 /* In-process ref API used until the native NV2A renderer lands in G3. */
 #include "../qcommon/q_shared.h"
 #include "../renderercommon/tr_public.h"
+#include "../renderernv2a/xbox_nv2a.h"
 
 #include <string.h>
 
 static refexport_t xboxRefExport;
 static qhandle_t xboxRefNextShader = 1;
 
-static void XboxRefShutdown(qboolean destroyWindow) { (void)destroyWindow; }
+static void XboxRefShutdown(qboolean destroyWindow)
+{
+	XboxNV2A_Shutdown(destroyWindow);
+}
 
 static void XboxRefBeginRegistration(glconfig_t *config)
 {
-	memset(config, 0, sizeof(*config));
-	config->vidWidth = 640;
-	config->vidHeight = 480;
-	config->windowAspect = 4.0f / 3.0f;
-	Q_strncpyz(config->renderer_string, "native Xbox shell (no renderer)",
-		sizeof(config->renderer_string));
+	XboxNV2A_BeginRegistration(config);
 }
 
 static qhandle_t XboxRefRegisterShader(const char *name)
@@ -62,12 +61,14 @@ static void XboxRefAddLight(const vec3_t org, float intensity,
 	(void)org; (void)intensity; (void)r; (void)g; (void)b;
 }
 static void XboxRefRenderScene(const refdef_t *fd) { (void)fd; }
-static void XboxRefSetColor(const float *rgba) { (void)rgba; }
+static void XboxRefSetColor(const float *rgba)
+{
+	XboxNV2A_SetColor(rgba);
+}
 static void XboxRefDrawStretchPic(float x, float y, float w, float h,
 	float s1, float t1, float s2, float t2, qhandle_t shader)
 {
-	(void)x; (void)y; (void)w; (void)h; (void)s1; (void)t1;
-	(void)s2; (void)t2; (void)shader;
+	XboxNV2A_DrawStretchPic(x, y, w, h, s1, t1, s2, t2, shader);
 }
 static void XboxRefDrawStretchRaw(int x, int y, int w, int h, int cols,
 	int rows, const byte *data, int client, qboolean dirty)
@@ -81,11 +82,13 @@ static void XboxRefUploadCinematic(int w, int h, int cols, int rows,
 	(void)w; (void)h; (void)cols; (void)rows; (void)data;
 	(void)client; (void)dirty;
 }
-static void XboxRefBeginFrame(stereoFrame_t stereo) { (void)stereo; }
+static void XboxRefBeginFrame(stereoFrame_t stereo)
+{
+	XboxNV2A_BeginFrame(stereo);
+}
 static void XboxRefEndFrame(int *front, int *back)
 {
-	if (front) *front = 0;
-	if (back) *back = 0;
+	XboxNV2A_EndFrame(front, back);
 }
 static int XboxRefMarkFragments(int numPoints, const vec3_t *points,
 	const vec3_t projection, int maxPoints, vec3_t pointBuffer,
@@ -132,6 +135,8 @@ static void XboxRefTakeVideoFrame(int h, int w, byte *capture,
 refexport_t *GetRefAPI(int apiVersion, refimport_t *rimp)
 {
 	if (apiVersion != REF_API_VERSION || !rimp)
+		return NULL;
+	if (!XboxNV2A_Init())
 		return NULL;
 
 	memset(&xboxRefExport, 0, sizeof(xboxRefExport));
