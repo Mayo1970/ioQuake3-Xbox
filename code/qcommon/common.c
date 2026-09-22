@@ -24,10 +24,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "q_shared.h"
 #include "qcommon.h"
 #include <setjmp.h>
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(XBOX)
 #include <netinet/in.h>
 #include <sys/stat.h> // umask
-#else
+#elif defined(_WIN32) && !defined(XBOX)
 #include <winsock.h>
 #endif
 
@@ -37,9 +37,17 @@ int demo_protocols[] =
 #define MAX_NUM_ARGVS	50
 
 #define MIN_DEDICATED_COMHUNKMEGS 1
+#ifdef XBOX
+/* The original Xbox has 64 MiB shared between the title and the OS.  The
+ * desktop defaults (128 MiB hunk + 48 MiB zone) cannot fit in that pool. */
+#define DEF_COMHUNKMEGS 	16
+#define MIN_COMHUNKMEGS		16
+#define DEF_COMZONEMEGS		8
+#else
 #define DEF_COMHUNKMEGS 	128
 #define MIN_COMHUNKMEGS		DEF_COMHUNKMEGS
 #define DEF_COMZONEMEGS		48
+#endif
 #define DEF_COMHUNKMEGS_S	XSTRING(DEF_COMHUNKMEGS)
 #define DEF_COMZONEMEGS_S	XSTRING(DEF_COMZONEMEGS)
 

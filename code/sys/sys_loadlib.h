@@ -34,6 +34,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #		define Sys_LoadFunction(h,fn) dlsym(h,fn)
 #		define Sys_LibraryError() dlerror()
 #	endif
+#elif defined(XBOX)
+#	define Sys_LoadLibrary(f) NULL
+#	define Sys_UnloadLibrary(h) ((void)(h))
+#	define Sys_LoadFunction(h,fn) NULL
+#	define Sys_LibraryError() "dynamic libraries are not supported on Xbox"
 #else
 #	ifdef USE_INTERNAL_SDL_HEADERS
 #		include "SDL.h"

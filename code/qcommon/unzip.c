@@ -73,6 +73,20 @@ woven in by Terry Thorsen 1/2003.
 # define TRYFREE(p) {if (p) Z_Free(p);}
 #endif
 
+/* nxdk builds zlib with Z_SOLO, which requires callers to provide memory
+ * callbacks instead of accepting zlib's default calloc/free pair. */
+static voidpf unz_zalloc(voidpf opaque, unsigned items, unsigned size)
+{
+    (void)opaque;
+    return Z_Malloc((int)(items * size));
+}
+
+static void unz_zfree(voidpf opaque, voidpf address)
+{
+    (void)opaque;
+    Z_Free(address);
+}
+
 #define SIZECENTRALDIRITEM (0x2e)
 #define SIZEZIPLOCALHEADER (0x1e)
 
@@ -1139,8 +1153,8 @@ extern int ZEXPORT unzOpenCurrentFile3 (file, method, level, raw, password)
     if ((s->cur_file_info.compression_method==Z_DEFLATED) &&
         (!raw))
     {
-      pfile_in_zip_read_info->stream.zalloc = (alloc_func)0;
-      pfile_in_zip_read_info->stream.zfree = (free_func)0;
+      pfile_in_zip_read_info->stream.zalloc = unz_zalloc;
+      pfile_in_zip_read_info->stream.zfree = unz_zfree;
       pfile_in_zip_read_info->stream.opaque = (voidpf)0;
       pfile_in_zip_read_info->stream.next_in = (voidpf)0;
       pfile_in_zip_read_info->stream.avail_in = 0;

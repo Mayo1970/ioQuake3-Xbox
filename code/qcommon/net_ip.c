@@ -23,7 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../qcommon/q_shared.h"
 #include "../qcommon/qcommon.h"
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(XBOX)
 #	include <winsock2.h>
 #	include <ws2tcpip.h>
 #	if WINVER < 0x501
@@ -62,6 +62,22 @@ typedef u_long	ioctlarg_t;
 
 static WSADATA	winsockdata;
 static qboolean	winsockInitialized = qfalse;
+
+#elif defined(XBOX)
+
+#	include <lwip/sockets.h>
+#	include <lwip/netdb.h>
+#	include <lwip/inet.h>
+#	include <errno.h>
+
+typedef int SOCKET;
+#	define INVALID_SOCKET		-1
+#	define SOCKET_ERROR		-1
+typedef unsigned long ioctlarg_t;
+#	define socketError		errno
+#	ifndef IPV6_MULTICAST_IF
+#		define IPV6_MULTICAST_IF 17
+#	endif
 
 #else
 
@@ -162,7 +178,7 @@ NET_ErrorString
 ====================
 */
 char *NET_ErrorString( void ) {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(XBOX)
 	//FIXME: replace with FormatMessage?
 	switch( socketError ) {
 		case WSAEINTR: return "WSAEINTR";
@@ -332,7 +348,7 @@ static qboolean Sys_StringToSockaddr(const char *s, struct sockaddr *sadr, int s
 			Com_Printf("Sys_StringToSockaddr: Error resolving %s: No address of required type found.\n", s);
 	}
 	else
-		Com_Printf("Sys_StringToSockaddr: Error resolving %s: %s\n", s, gai_strerror(retval));
+		Com_Printf("Sys_StringToSockaddr: Error resolving %s: %d\n", s, retval);
 	
 	if(res)
 		freeaddrinfo(res);
@@ -354,8 +370,17 @@ static void Sys_SockaddrToString(char *dest, int destlen, struct sockaddr *input
 	else
 		inputlen = sizeof(struct sockaddr_in);
 
+#ifdef XBOX
+	if (input->sa_family == AF_INET)
+		inet_ntop(AF_INET, &((struct sockaddr_in *)input)->sin_addr, dest, destlen);
+	else if (input->sa_family == AF_INET6)
+		inet_ntop(AF_INET6, &((struct sockaddr_in6 *)input)->sin6_addr, dest, destlen);
+	else if (destlen > 0)
+		*dest = '\0';
+#else
 	if(getnameinfo(input, inputlen, dest, destlen, NULL, 0, NI_NUMERICHOST) && destlen > 0)
 		*dest = '\0';
+#endif
 }
 
 /*
@@ -987,7 +1012,7 @@ void NET_SetMulticast6(void)
 
 	if(*net_mcast6iface->string)
 	{
-#ifdef _WIN32
+#if defined(_WIN32) || defined(XBOX)
 		curgroup.ipv6mr_interface = net_mcast6iface->integer;
 #else
 		curgroup.ipv6mr_interface = if_nametoindex(net_mcast6iface->string);
@@ -1275,7 +1300,12 @@ static void NET_AddLocalAddress(char *ifname, struct sockaddr *addr, struct sock
 	}
 }
 
-#if defined(__linux__) || defined(__APPLE__) || defined(__BSD__)
+#if defined(XBOX)
+static void NET_GetLocalAddress(void)
+{
+	numIP = 0;
+}
+#elif defined(__linux__) || defined(__APPLE__) || defined(__BSD__)
 static void NET_GetLocalAddress(void)
 {
 	struct ifaddrs *ifap, *search;
@@ -1457,7 +1487,7 @@ static qboolean NET_GetCvars( void ) {
 	modified += net_mcast6addr->modified;
 	net_mcast6addr->modified = qfalse;
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(XBOX)
 	net_mcast6iface = Cvar_Get( "net_mcast6iface", "0", CVAR_LATCH | CVAR_ARCHIVE );
 #else
 	net_mcast6iface = Cvar_Get( "net_mcast6iface", "", CVAR_LATCH | CVAR_ARCHIVE );
@@ -1578,7 +1608,7 @@ NET_Init
 ====================
 */
 void NET_Init( void ) {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(XBOX)
 	int		r;
 
 	r = WSAStartup( MAKEWORD( 1, 1 ), &winsockdata );
@@ -1609,7 +1639,7 @@ void NET_Shutdown( void ) {
 
 	NET_Config( qfalse );
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(XBOX)
 	WSACleanup();
 	winsockInitialized = qfalse;
 #endif
@@ -1685,7 +1715,7 @@ void NET_Sleep(int msec)
 			highestfd = ip6_socket;
 	}
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(XBOX)
 	if(highestfd == INVALID_SOCKET)
 	{
 		// windows ain't happy when select is called without valid FDs

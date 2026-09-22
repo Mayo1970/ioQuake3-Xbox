@@ -1,10 +1,11 @@
-# Native OG Xbox bring-up target.
+# Native OG Xbox engine-shell target.
 #
 # This file is intentionally independent of the host CMake build.  The Xbox
-# slice compiles the qcommon/client-facing command boundary without pulling in
-# SDL, OpenGL, or desktop platform libraries.
+# target links the real qcommon/client/server shell, with the renderer and
+# audio boundaries supplied by native Xbox shims. No SDL, OpenGL, or desktop
+# platform libraries enter this target.
 
-XBE_TITLE = ioQuake3 Xbox skeleton
+XBE_TITLE = ioQuake3 Xbox engine shell
 OUTPUT_DIR = build_xbox
 
 SRCS = \
@@ -14,23 +15,78 @@ SRCS = \
 	$(CURDIR)/code/sys/xbox_input.c \
 	$(CURDIR)/code/sys/xbox_input_engine.c \
 	$(CURDIR)/code/sys/xbox_snd.c \
+	$(CURDIR)/code/sys/xbox_snd_engine.c \
+	$(CURDIR)/code/sys/xbox_ref.c \
 	$(CURDIR)/code/sys/xbox_qcommon.c \
+	$(CURDIR)/code/qcommon/cm_load.c \
+	$(CURDIR)/code/qcommon/cm_patch.c \
+	$(CURDIR)/code/qcommon/cm_polylib.c \
+	$(CURDIR)/code/qcommon/cm_test.c \
+	$(CURDIR)/code/qcommon/cm_trace.c \
+	$(CURDIR)/code/qcommon/cmd.c \
+	$(CURDIR)/code/qcommon/common.c \
+	$(CURDIR)/code/qcommon/cvar.c \
+	$(CURDIR)/code/qcommon/files.c \
+	$(CURDIR)/code/qcommon/huffman.c \
+	$(CURDIR)/code/qcommon/ioapi.c \
+	$(CURDIR)/code/qcommon/md4.c \
+	$(CURDIR)/code/qcommon/md5.c \
+	$(CURDIR)/code/qcommon/msg.c \
+	$(CURDIR)/code/qcommon/net_chan.c \
+	$(CURDIR)/code/qcommon/net_ip.c \
 	$(CURDIR)/code/qcommon/q_shared.c \
 	$(CURDIR)/code/qcommon/q_math.c \
-	$(CURDIR)/code/qcommon/cmd.c \
-	$(CURDIR)/code/qcommon/cvar.c \
+	$(CURDIR)/code/qcommon/unzip.c \
+	$(CURDIR)/code/qcommon/vm.c \
+	$(CURDIR)/code/qcommon/vm_interpreted.c \
+	$(CURDIR)/code/qcommon/vm_none.c \
+	$(CURDIR)/code/client/cl_cgame.c \
+	$(CURDIR)/code/client/cl_cin.c \
+	$(CURDIR)/code/client/cl_console.c \
+	$(CURDIR)/code/client/cl_input.c \
+	$(CURDIR)/code/client/cl_keys.c \
+	$(CURDIR)/code/client/cl_main.c \
+	$(CURDIR)/code/client/cl_net_chan.c \
+	$(CURDIR)/code/client/cl_parse.c \
+	$(CURDIR)/code/client/cl_scrn.c \
+	$(CURDIR)/code/client/cl_ui.c \
+	$(CURDIR)/code/client/cl_avi.c \
+	$(CURDIR)/code/client/snd_adpcm.c \
+	$(CURDIR)/code/client/snd_dma.c \
+	$(CURDIR)/code/client/snd_mem.c \
+	$(CURDIR)/code/client/snd_mix.c \
+	$(CURDIR)/code/client/snd_wavelet.c \
+	$(CURDIR)/code/client/snd_main.c \
+	$(CURDIR)/code/client/snd_codec.c \
+	$(CURDIR)/code/client/snd_codec_wav.c \
+	$(CURDIR)/code/server/sv_bot.c \
+	$(CURDIR)/code/server/sv_ccmds.c \
+	$(CURDIR)/code/server/sv_client.c \
+	$(CURDIR)/code/server/sv_game.c \
+	$(CURDIR)/code/server/sv_init.c \
+	$(CURDIR)/code/server/sv_main.c \
+	$(CURDIR)/code/server/sv_net_chan.c \
+	$(CURDIR)/code/server/sv_snapshot.c \
+	$(CURDIR)/code/server/sv_world.c \
 	$(CURDIR)/code/asm/ftola.c \
 	$(CURDIR)/code/asm/snapvector.c
 
 # nxdk supplies the target ABI and its Pentium III-safe defaults.  Keep the
 # target marker explicit so later platform conditionals do not depend on an
 # incidental compiler macro.
-NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DDEDICATED -DIOQUAKE3_XBOX_SHELL -O2 -ffunction-sections -fno-exceptions
+NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DIOQUAKE3_XBOX_SHELL -DBOTLIB -DC_ONLY -O2 -ffunction-sections -fno-exceptions \
+	-I/usr/src/nxdk/lib/net/lwip/src/include \
+	-I/usr/src/nxdk/lib/net/lwip/src/include/compat/posix
+NXDK_NET = y
 
-# G2 uses nxdk's native XID and AC97 services.  SDL remains out of this
-# target; the client-facing translation layer will be added after the service
-# contracts are validated.  nxdk's base USB library includes the XID driver.
+# The native XID and AC97 services remain independent of the client engine.
+# nxdk's base USB library includes the XID driver.
 
 NXDK_DIR ?= /usr/src/nxdk
 
 include $(NXDK_DIR)/Makefile
+
+# nxdk-link hard-codes a 64 KiB stack before appending user flags, and lld
+# keeps that first stack setting.  Use the same linker recipe with a 1 MiB
+# stack for the full Com_Init client/server initialization graph.
+LD = lld -flavor link -subsystem:windows -fixed -base:0x00010000 -stack:1048576 -merge:.edata=.edataxb

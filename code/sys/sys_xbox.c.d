@@ -29,20 +29,20 @@
   /src/code/sys/../qcommon/qcommon.h \
   /src/code/sys/../qcommon/../qcommon/cm_public.h \
   /src/code/sys/../qcommon/../qcommon/qfiles.h \
-  /usr/src/nxdk/lib/hal/debug.h /usr/src/nxdk/lib/winapi/windows.h \
-  /usr/src/nxdk/lib/winapi/debugapi.h /usr/src/nxdk/lib/winapi/windef.h \
+  /usr/src/nxdk/lib/hal/debug.h /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h \
   /usr/src/nxdk/lib/xboxkrnl/xboxdef.h \
+  /usr/src/nxdk/lib/xboxkrnl/ntstatus.h \
+  /usr/src/nxdk/lib/winapi/windows.h /usr/src/nxdk/lib/winapi/debugapi.h \
+  /usr/src/nxdk/lib/winapi/windef.h \
   /usr/src/nxdk/lib/winapi/errhandlingapi.h \
   /usr/src/nxdk/lib/winapi/winbase.h /usr/src/nxdk/lib/winapi/basetsd.h \
-  /usr/src/nxdk/lib/winapi/minwinbase.h \
-  /usr/src/nxdk/lib/xboxkrnl/ntstatus.h /usr/src/nxdk/lib/winapi/winnt.h \
+  /usr/src/nxdk/lib/winapi/minwinbase.h /usr/src/nxdk/lib/winapi/winnt.h \
   /usr/src/nxdk/lib/xboxrt/vcruntime/excpt.h \
   /usr/src/nxdk/lib/winapi/fibersapi.h \
   /usr/src/nxdk/lib/winapi/fileapi.h \
   /usr/src/nxdk/lib/winapi/handleapi.h \
   /usr/src/nxdk/lib/winapi/libloaderapi.h \
   /usr/src/nxdk/lib/winapi/memoryapi.h \
-  /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h \
   /usr/src/nxdk/lib/winapi/processthreadsapi.h \
   /usr/src/nxdk/lib/winapi/profileapi.h \
   /usr/src/nxdk/lib/winapi/synchapi.h \
@@ -81,15 +81,16 @@
 /src/code/sys/../qcommon/../qcommon/cm_public.h:
 /src/code/sys/../qcommon/../qcommon/qfiles.h:
 /usr/src/nxdk/lib/hal/debug.h:
+/usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h:
+/usr/src/nxdk/lib/xboxkrnl/xboxdef.h:
+/usr/src/nxdk/lib/xboxkrnl/ntstatus.h:
 /usr/src/nxdk/lib/winapi/windows.h:
 /usr/src/nxdk/lib/winapi/debugapi.h:
 /usr/src/nxdk/lib/winapi/windef.h:
-/usr/src/nxdk/lib/xboxkrnl/xboxdef.h:
 /usr/src/nxdk/lib/winapi/errhandlingapi.h:
 /usr/src/nxdk/lib/winapi/winbase.h:
 /usr/src/nxdk/lib/winapi/basetsd.h:
 /usr/src/nxdk/lib/winapi/minwinbase.h:
-/usr/src/nxdk/lib/xboxkrnl/ntstatus.h:
 /usr/src/nxdk/lib/winapi/winnt.h:
 /usr/src/nxdk/lib/xboxrt/vcruntime/excpt.h:
 /usr/src/nxdk/lib/winapi/fibersapi.h:
@@ -97,7 +98,6 @@
 /usr/src/nxdk/lib/winapi/handleapi.h:
 /usr/src/nxdk/lib/winapi/libloaderapi.h:
 /usr/src/nxdk/lib/winapi/memoryapi.h:
-/usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h:
 /usr/src/nxdk/lib/winapi/processthreadsapi.h:
 /usr/src/nxdk/lib/winapi/profileapi.h:
 /usr/src/nxdk/lib/winapi/synchapi.h:

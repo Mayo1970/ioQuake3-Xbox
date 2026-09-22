@@ -522,6 +522,12 @@ SV_BotInitBotLib
 void SV_BotInitBotLib(void) {
 	botlib_import_t	botlib_import;
 
+#ifdef XBOX
+	/* The engine shell does not ship the optional botlib VM yet. */
+	botlib_export = NULL;
+	return;
+#endif
+
 	if (debugpolygons) Z_Free(debugpolygons);
 	bot_maxdebugpolys = Cvar_VariableIntegerValue("bot_maxdebugpolys");
 	debugpolygons = Z_Malloc(sizeof(bot_debugpoly_t) * bot_maxdebugpolys);

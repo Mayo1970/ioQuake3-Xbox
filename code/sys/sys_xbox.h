@@ -13,6 +13,7 @@ This file is part of Quake III Arena source code.
 
 void Sys_XboxLogOpen(void);
 void Sys_XboxLog(const char *format, ...);
+void Sys_XboxMemoryReport(const char *stage);
 void Sys_XboxSleep(unsigned int milliseconds);
 void Sys_XboxRequestExit(void);
 int Sys_XboxExitRequested(void);

@@ -12,6 +12,7 @@ This file is part of Quake III Arena source code.
 #include "../qcommon/qcommon.h"
 
 #include <hal/debug.h>
+#include <xboxkrnl/xboxkrnl.h>
 #include <windows.h>
 
 #include <stdarg.h>
@@ -64,6 +65,33 @@ void Sys_XboxLog(const char *format, ...)
 	}
 }
 
+void Sys_XboxMemoryReport(const char *stage)
+{
+	MM_STATISTICS statistics;
+	NTSTATUS status;
+
+	memset(&statistics, 0, sizeof(statistics));
+	statistics.Length = sizeof(statistics);
+	status = MmQueryStatistics(&statistics);
+	if (status != 0)
+	{
+		Sys_XboxLog("Xbox memory %s: MmQueryStatistics failed 0x%08x\n",
+			stage ? stage : "", (unsigned int)status);
+		return;
+	}
+
+	Sys_XboxLog(
+		"Xbox memory %s: physical=%u MiB available=%u MiB "
+		"committed=%u MiB reserved=%u MiB image=%u MiB stack=%u KiB\n",
+		stage ? stage : "",
+		(unsigned int)((statistics.TotalPhysicalPages * 4U) / 1024U),
+		(unsigned int)((statistics.AvailablePages * 4U) / 1024U),
+		(unsigned int)(statistics.VirtualMemoryBytesCommitted / (1024U * 1024U)),
+		(unsigned int)(statistics.VirtualMemoryBytesReserved / (1024U * 1024U)),
+		(unsigned int)((statistics.ImagePagesCommitted * 4U) / 1024U),
+		(unsigned int)((statistics.StackPagesCommitted * 4U) / 1024U));
+}
+
 void Sys_Print(const char *message)
 {
 	Sys_XboxLog("%s", message);
@@ -107,6 +135,10 @@ char *Sys_GetClipboardData(void)
 {
 	return NULL;
 }
+
+char *Sys_SteamPath(void) { return ""; }
+char *Sys_GogPath(void) { return ""; }
+char *Sys_MicrosoftStorePath(void) { return ""; }
 
 qboolean Sys_LowPhysicalMemory(void)
 {
@@ -162,13 +194,30 @@ FILE *Sys_FOpen(const char *ospath, const char *mode)
 qboolean Sys_Mkdir(const char *path)
 {
 	char normalized[MAX_OSPATH];
+	DWORD attributes;
+	DWORD error;
 
 	if (!path || !*path)
 		return qfalse;
 	Q_strncpyz(normalized, path, sizeof(normalized));
 	Sys_XboxNormalizePath(normalized);
-	if (CreateDirectoryA(normalized, NULL) || GetLastError() == ERROR_ALREADY_EXISTS)
+
+	if (CreateDirectoryA(normalized, NULL))
 		return qtrue;
+
+	/*
+	 * FATX/nxdk can report a stale or non-standard last-error value when the
+	 * directory already exists.  Query the object directly before treating the
+	 * create as a failure; FS_CreatePath calls us for every parent component.
+	 */
+	error = GetLastError();
+	attributes = GetFileAttributesA(normalized);
+	if (attributes != INVALID_FILE_ATTRIBUTES &&
+		(attributes & FILE_ATTRIBUTE_DIRECTORY))
+		return qtrue;
+
+	Sys_XboxLog("Xbox mkdir failed: %s error=0x%08x attrs=0x%08x\n",
+		normalized, (unsigned int)error, (unsigned int)attributes);
 	return qfalse;
 }
 
@@ -353,14 +402,6 @@ char *Sys_ConsoleInput(void)
 	return NULL;
 }
 
-void Sys_ShowIP(void) {}
-void Sys_SendPacket(int length, const void *data, netadr_t to)
-{
-	(void)length;
-	(void)data;
-	(void)to;
-}
-
 dialogResult_t Sys_Dialog(dialogType_t type, const char *message, const char *title)
 {
 	(void)type;
@@ -379,7 +420,40 @@ const char *Sys_XboxBasePath(void)
 const char *Sys_XboxHomePath(void)
 {
 	if (!xboxHomePath[0])
-		Q_strncpyz(xboxHomePath, "E:\\Apps\\ioquake3", sizeof(xboxHomePath));
+	{
+		DWORD attributes;
+
+		/*
+		 * The normal Xbox layout keeps mutable data on E:.  Some launchers and
+		 * test images do not mount E:, however, while D:\baseq3 already exists
+		 * because it contains the shipped game data.  Make the game directory
+		 * first so FS_CreatePath can later create files below it.
+		 */
+		if (CreateDirectoryA("E:\\baseq3", NULL))
+		{
+			Q_strncpyz(xboxHomePath, "E:", sizeof(xboxHomePath));
+		}
+		else
+		{
+			attributes = GetFileAttributesA("E:\\baseq3");
+			if (attributes != INVALID_FILE_ATTRIBUTES &&
+				(attributes & FILE_ATTRIBUTE_DIRECTORY))
+			{
+				Q_strncpyz(xboxHomePath, "E:", sizeof(xboxHomePath));
+			}
+			else if ((attributes = GetFileAttributesA("D:\\baseq3")) != INVALID_FILE_ATTRIBUTES &&
+				(attributes & FILE_ATTRIBUTE_DIRECTORY))
+			{
+				Sys_XboxLog("Xbox home path: E:\\baseq3 unavailable, using D:\\baseq3\n");
+				Q_strncpyz(xboxHomePath, "D:", sizeof(xboxHomePath));
+			}
+			else
+			{
+				/* Keep the normal path in the diagnostic case. */
+				Q_strncpyz(xboxHomePath, "E:", sizeof(xboxHomePath));
+			}
+		}
+	}
 	return xboxHomePath;
 }
 

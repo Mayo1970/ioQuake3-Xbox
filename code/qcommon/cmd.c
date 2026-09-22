@@ -860,6 +860,11 @@ Cmd_Init
 void Cmd_Init (void) {
 	Cmd_AddCommand ("cmdlist",Cmd_List_f);
 #ifdef IOQUAKE3_XBOX_SHELL
+	Cmd_AddCommand ("exec",Cmd_Exec_f);
+	Cmd_AddCommand ("execq",Cmd_Exec_f);
+	Cmd_SetCommandCompletionFunc( "exec", Cmd_CompleteCfgName );
+	Cmd_SetCommandCompletionFunc( "execq", Cmd_CompleteCfgName );
+	Cmd_AddCommand ("vstr", Cmd_Vstr_f);
 	Cmd_AddCommand ("echo",Cmd_Echo_f);
 	Cmd_AddCommand ("wait", Cmd_Wait_f);
 #else
@@ -873,4 +878,3 @@ void Cmd_Init (void) {
 	Cmd_AddCommand ("wait", Cmd_Wait_f);
 #endif
 }
-
