@@ -1,0 +1,23 @@
+# Native OG Xbox bring-up target.
+#
+# This file is intentionally independent of the host CMake build.  The first
+# slice only proves that nxdk can compile, link, and convert an Xbox entry
+# point into a default.xbe; engine and renderer sources will be added behind
+# later goals.
+
+XBE_TITLE = ioQuake3 Xbox skeleton
+OUTPUT_DIR = build_xbox
+
+SRCS = \
+	$(CURDIR)/code/sys/xbox_boot.c \
+	$(CURDIR)/code/sys/sys_xbox.c \
+	$(CURDIR)/code/sys/con_xbox.c
+
+# nxdk supplies the target ABI and its Pentium III-safe defaults.  Keep the
+# target marker explicit so later platform conditionals do not depend on an
+# incidental compiler macro.
+NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -O2
+
+NXDK_DIR ?= /usr/src/nxdk
+
+include $(NXDK_DIR)/Makefile
