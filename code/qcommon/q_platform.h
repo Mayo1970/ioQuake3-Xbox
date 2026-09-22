@@ -75,7 +75,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 //================================================================= WIN64/32 ===
 
-#if defined(_WIN64) || defined(__WIN64__)
+#if defined(XBOX)
+
+#define OS_STRING "xbox"
+#define ID_INLINE inline
+#define PATH_SEP '\\'
+#define ARCH_STRING "x86"
+#define Q3_LITTLE_ENDIAN
+#define DLL_EXT ".xbe"
+
+#elif defined(_WIN64) || defined(__WIN64__)
 
 #undef QDECL
 #define QDECL __cdecl

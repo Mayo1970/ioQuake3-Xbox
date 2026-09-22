@@ -752,13 +752,51 @@ int Q_isalpha( int c )
 
 qboolean Q_isanumber( const char *s )
 {
-	char *p;
-	double Q_UNUSED_VAR d;
+	const char *p = s;
+	int digits = 0;
 
-	if( *s == '\0' )
+	if( !p )
 		return qfalse;
 
-	d = strtod( s, &p );
+	while( *p == ' ' || *p == '\t' )
+		p++;
+	if( *p == '+' || *p == '-' )
+		p++;
+
+	while( *p >= '0' && *p <= '9' )
+	{
+		p++;
+		digits++;
+	}
+
+	if( *p == '.' )
+	{
+		p++;
+		while( *p >= '0' && *p <= '9' )
+		{
+			p++;
+			digits++;
+		}
+	}
+
+	if( !digits )
+		return qfalse;
+
+	if( *p == 'e' || *p == 'E' )
+	{
+		int exponentDigits = 0;
+
+		p++;
+		if( *p == '+' || *p == '-' )
+			p++;
+		while( *p >= '0' && *p <= '9' )
+		{
+			p++;
+			exponentDigits++;
+		}
+		if( !exponentDigits )
+			return qfalse;
+	}
 
 	return *p == '\0';
 }

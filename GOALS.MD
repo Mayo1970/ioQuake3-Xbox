@@ -26,8 +26,9 @@ engineering assumption, and `[LOW]` an item requiring implementation evidence.
   `sha256:be4dcf3336470d525ca05716c40f85852c6140225f3442baa0117ee4c32a65eb`.
   [HIGH]
 - `Makefile.xbox` produces `build_xbox/default.xbe` with the pinned nxdk
-  container. The generated XBE was booted on real OG Xbox hardware and reached
-  the skeleton logger. [HIGH]
+  container. The current qcommon-shell XBE was booted on real OG Xbox hardware
+  and reached qcommon initialization and command-buffer execution without the
+  nxdk `strtod()` assertion or command-buffer overflow. [HIGH]
 - No emulator smoke test or full ioquake3 engine test has been run yet. [HIGH]
 
 ## Non-goals and constraints
@@ -74,14 +75,22 @@ Status: **in progress — skeleton build and first hardware boot complete**
 - Disable unsupported desktop targets and optional libraries from this target;
   retain the upstream build for host regression use. [MEDIUM]
 
+Completed G1 shell slice:
+
+- Compile the qcommon/client-facing command boundary without SDL, OpenGL, or
+  proprietary XDK dependencies. **Complete for the G1 shell slice; V1 passed
+  with the pinned nxdk container and emitted `build_xbox/default.xbe`.** [HIGH]
+- Add engine-facing logging and a controlled `quit` path. **Complete for the
+  G1 shell slice.** [HIGH]
+
 Remaining G1 work:
 
-- Compile the common `qcommon` and client shell against the Xbox platform
-  boundary without SDL, OpenGL, or proprietary XDK dependencies. [MEDIUM]
-- Add the engine-facing logging and controlled exit path. [MEDIUM]
+- None for the validated qcommon-shell slice. The full `Com_Init` engine shell
+  remains dependent on G2 platform services. [HIGH]
 
 Exit: the nxdk container produces a valid XBE and links the platform shell.
-The initial skeleton portion is complete; the engine-shell portion remains.
+The build-side and hardware exits are complete for the qcommon-shell slice.
+The full `Com_Init` engine shell still depends on G2 platform services. [HIGH]
 
 ### G2 — Platform services
 
@@ -188,8 +197,8 @@ unconditional smoke-test loop:
   correctness, and a sustained play session; record exact build and content
   hashes.
 
-The skeleton hardware claim is now validated; full engine claims still wait for
-V3. [HIGH]
+The qcommon-shell artifact passed V3 hardware validation; full engine claims
+still wait for G2 and later renderer/service work. [HIGH]
 
 ## First implementation slice
 
@@ -197,10 +206,12 @@ The next coding slice should be deliberately small:
 
 1. Add the nxdk build/startup skeleton. **Complete; V1 and the first hardware
    boot gate passed.**
-2. Compile the common `qcommon` and client shell without SDL/OpenGL. **Next.**
-3. Add logging and a controlled exit path.
-4. Stop before renderer work until the engine-shell XBE boundary is
-   understood.
+2. Compile the qcommon/client-facing shell without SDL/OpenGL. **Complete; V1
+   passed and `build_xbox/default.xbe` was emitted.**
+3. Add logging and a controlled exit path. **Complete for the shell slice.**
+4. Hardware-validate the current shell. **Complete; real hardware reached
+   qcommon initialization and command-buffer execution.**
+5. Stop before renderer work until the engine-shell XBE boundary is understood.
 
 This slice does not require a smoke test unless the build itself fails or the
 resulting artifact must be inspected to resolve a toolchain question. [HIGH]
