@@ -1,4 +1,4 @@
-/src/code/sys/xbox_input.obj: /src/code/sys/xbox_input.c \
+/src/code/sys/xbox_input_engine.obj: /src/code/sys/xbox_input_engine.c \
   /src/code/sys/xbox_input.h /usr/src/nxdk/lib/pdclib/include/stdint.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_lib_ext1.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_int.h \
@@ -25,18 +25,7 @@
   /usr/src/nxdk/lib/pdclib/include/ctype.h \
   /usr/src/nxdk/lib/pdclib/include/limits.h \
   /src/code/sys/../qcommon/q_platform.h \
-  /src/code/sys/../qcommon/surfaceflags.h \
-  /usr/src/nxdk/lib/usb/libusbohci/inc/usb.h \
-  /usr/src/nxdk/lib/usb/libusbohci_xbox/usbh_config_xbox.h \
-  /usr/src/nxdk/lib/usb/libusbohci/inc/usbh_lib.h \
-  /usr/src/nxdk/lib/usb/libusbohci/inc/N9H30.h \
-  /usr/src/nxdk/lib/usb/libusbohci/inc/ehci.h \
-  /usr/src/nxdk/lib/usb/libusbohci/inc/ohci.h \
-  /usr/src/nxdk/lib/usb/libusbohci_xbox/xid_driver.h \
-  /src/code/sys/../qcommon/qcommon.h \
-  /src/code/sys/../qcommon/../qcommon/cm_public.h \
-  /src/code/sys/../qcommon/../qcommon/qfiles.h \
-  /src/code/sys/../client/keycodes.h
+  /src/code/sys/../qcommon/surfaceflags.h
 /src/code/sys/xbox_input.h:
 /usr/src/nxdk/lib/pdclib/include/stdint.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_lib_ext1.h:
@@ -65,14 +54,3 @@
 /usr/src/nxdk/lib/pdclib/include/limits.h:
 /src/code/sys/../qcommon/q_platform.h:
 /src/code/sys/../qcommon/surfaceflags.h:
-/usr/src/nxdk/lib/usb/libusbohci/inc/usb.h:
-/usr/src/nxdk/lib/usb/libusbohci_xbox/usbh_config_xbox.h:
-/usr/src/nxdk/lib/usb/libusbohci/inc/usbh_lib.h:
-/usr/src/nxdk/lib/usb/libusbohci/inc/N9H30.h:
-/usr/src/nxdk/lib/usb/libusbohci/inc/ehci.h:
-/usr/src/nxdk/lib/usb/libusbohci/inc/ohci.h:
-/usr/src/nxdk/lib/usb/libusbohci_xbox/xid_driver.h:
-/src/code/sys/../qcommon/qcommon.h:
-/src/code/sys/../qcommon/../qcommon/cm_public.h:
-/src/code/sys/../qcommon/../qcommon/qfiles.h:
-/src/code/sys/../client/keycodes.h:

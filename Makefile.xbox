@@ -12,6 +12,7 @@ SRCS = \
 	$(CURDIR)/code/sys/sys_xbox.c \
 	$(CURDIR)/code/sys/con_xbox.c \
 	$(CURDIR)/code/sys/xbox_input.c \
+	$(CURDIR)/code/sys/xbox_input_engine.c \
 	$(CURDIR)/code/sys/xbox_snd.c \
 	$(CURDIR)/code/sys/xbox_qcommon.c \
 	$(CURDIR)/code/qcommon/q_shared.c \

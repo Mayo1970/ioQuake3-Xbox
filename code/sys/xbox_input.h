@@ -26,6 +26,7 @@ typedef struct
 
 qboolean Sys_XboxInputInit(void);
 void Sys_XboxInputPoll(void);
+void Sys_XboxInputFrame(void);
 void Sys_XboxInputShutdown(void);
 const xboxControllerState_t *Sys_XboxInputState(int port);
 

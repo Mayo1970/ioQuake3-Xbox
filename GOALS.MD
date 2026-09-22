@@ -94,7 +94,7 @@ The full `Com_Init` engine shell still depends on G2 platform services. [HIGH]
 
 ### G2 — Platform services
 
-Status: **in progress — native service slice builds; full engine integration remains**
+Status: **paused — native service and input-event slices validated; full engine shell deferred to next session**
 
 Implement the minimum services behind ioquake3's existing interfaces:
 
@@ -116,11 +116,17 @@ Completed native service slice:
 - Controller input uses nxdk's native XID USB driver with all four controller
   slots, analog face buttons/triggers, sticks, hot-plug callbacks, and
   disconnect clearing. [HIGH]
+- Xbox controller state is translated through the ioquake3 `IN_*` boundary into
+  Quake `SE_KEY` and `SE_JOYSTICK_AXIS` events; the translation passed on real
+  hardware. [HIGH]
 - Sound has a native AC97 PCM service with contiguous DMA buffer allocation,
   a refill callback, silence fallback, and pause/shutdown control. [HIGH]
 - The shell's direct file probe now reads user-owned content from
   `D:\baseq3\` without copying data into the source tree. Full pak search
   integration is still pending. [MEDIUM]
+
+Next session: continue directly toward the full qcommon/client engine shell,
+using the validated native services and input-event boundary. [HIGH]
 
 Exit: the executable reaches the engine console without SDL, desktop OpenGL,
 or proprietary XDK dependencies, with the native services connected to the

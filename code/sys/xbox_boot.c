@@ -35,8 +35,7 @@ int main(void)
 	XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
 	Sys_XboxLogOpen();
 	Sys_XboxPlatformInit();
-	if (!Sys_XboxInputInit())
-		Sys_XboxLog("XID input service failed to initialize\n");
+	IN_Init(NULL);
 	if (!Sys_XboxSoundInit(NULL, NULL))
 		Sys_XboxLog("AC97 sound service failed to initialize\n");
 	else
@@ -59,7 +58,7 @@ int main(void)
 
 	for (;;)
 	{
-		Sys_XboxInputPoll();
+		IN_Frame();
 		controller = Sys_XboxInputState(0);
 		if (controller->connected != lastConnected)
 		{
@@ -80,7 +79,7 @@ int main(void)
 		if (Sys_XboxExitRequested())
 		{
 			Sys_XboxSoundShutdown();
-			Sys_XboxInputShutdown();
+			IN_Shutdown();
 			Sys_XboxPlatformShutdown();
 			return 0;
 		}

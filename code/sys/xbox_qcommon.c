@@ -98,6 +98,20 @@ void QDECL Com_DPrintf(const char *format, ...)
 	Sys_Print(message);
 }
 
+/* The shell has no client event loop yet; keep the real qcommon event API
+ * visible and observable until the full client is linked. */
+void Com_QueueEvent(int time, sysEventType_t type, int value, int value2,
+	int ptrLength, void *ptr)
+{
+	(void)time;
+	(void)ptrLength;
+	(void)ptr;
+	if (type == SE_KEY)
+		Sys_XboxLog("input event: key=%d down=%d\n", value, value2);
+	else if (type == SE_JOYSTICK_AXIS)
+		Sys_XboxLog("input event: axis=%d value=%d\n", value, value2);
+}
+
 void QDECL Com_Error(int code, const char *format, ...)
 {
 	char message[MAXPRINTMSG];
