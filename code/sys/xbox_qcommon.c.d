@@ -1,9 +1,5 @@
 /src/code/sys/xbox_qcommon.obj: /src/code/sys/xbox_qcommon.c \
-  /src/code/sys/sys_xbox.h /src/code/sys/../qcommon/q_shared.h \
-  /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
-  /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
-  /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
-  /usr/src/nxdk/lib/pdclib/include/stdio.h \
+  /src/code/sys/sys_xbox.h /usr/src/nxdk/lib/pdclib/include/stdio.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_lib_ext1.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_int.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/pdclib/_PDCLIB_config.h \
@@ -13,6 +9,10 @@
   /usr/src/nxdk/lib/xboxrt/libc_extensions/stdio_ext_.h \
   /usr/src/nxdk/lib/xboxrt/libc_extensions/stdlib_ext_.h \
   /usr/src/nxdk/lib/xboxrt/libc_extensions/string_ext_.h \
+  /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
+  /src/code/sys/../qcommon/q_shared.h \
+  /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
+  /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
   /usr/src/nxdk/lib/pdclib/include/stdarg.h \
   /usr/src/nxdk/lib/pdclib/include/string.h \
   /usr/src/nxdk/lib/pdclib/include/stddef.h \
@@ -30,10 +30,6 @@
   /src/code/sys/../qcommon/../qcommon/cm_public.h \
   /src/code/sys/../qcommon/../qcommon/qfiles.h
 /src/code/sys/sys_xbox.h:
-/src/code/sys/../qcommon/q_shared.h:
-/usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
-/usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
-/usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
 /usr/src/nxdk/lib/pdclib/include/stdio.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_lib_ext1.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_int.h:
@@ -44,6 +40,10 @@
 /usr/src/nxdk/lib/xboxrt/libc_extensions/stdio_ext_.h:
 /usr/src/nxdk/lib/xboxrt/libc_extensions/stdlib_ext_.h:
 /usr/src/nxdk/lib/xboxrt/libc_extensions/string_ext_.h:
+/usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
+/src/code/sys/../qcommon/q_shared.h:
+/usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
+/usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
 /usr/src/nxdk/lib/pdclib/include/stdarg.h:
 /usr/src/nxdk/lib/pdclib/include/string.h:
 /usr/src/nxdk/lib/pdclib/include/stddef.h:

@@ -11,6 +11,8 @@ SRCS = \
 	$(CURDIR)/code/sys/xbox_boot.c \
 	$(CURDIR)/code/sys/sys_xbox.c \
 	$(CURDIR)/code/sys/con_xbox.c \
+	$(CURDIR)/code/sys/xbox_input.c \
+	$(CURDIR)/code/sys/xbox_snd.c \
 	$(CURDIR)/code/sys/xbox_qcommon.c \
 	$(CURDIR)/code/qcommon/q_shared.c \
 	$(CURDIR)/code/qcommon/q_math.c \
@@ -22,7 +24,11 @@ SRCS = \
 # nxdk supplies the target ABI and its Pentium III-safe defaults.  Keep the
 # target marker explicit so later platform conditionals do not depend on an
 # incidental compiler macro.
-NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DDEDICATED -DIOQUAKE3_XBOX_SHELL -O2 -ffunction-sections
+NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DDEDICATED -DIOQUAKE3_XBOX_SHELL -O2 -ffunction-sections -fno-exceptions
+
+# G2 uses nxdk's native XID and AC97 services.  SDL remains out of this
+# target; the client-facing translation layer will be added after the service
+# contracts are validated.  nxdk's base USB library includes the XID driver.
 
 NXDK_DIR ?= /usr/src/nxdk
 

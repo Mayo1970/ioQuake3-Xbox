@@ -94,7 +94,7 @@ The full `Com_Init` engine shell still depends on G2 platform services. [HIGH]
 
 ### G2 — Platform services
 
-Status: **not started**
+Status: **in progress — native service slice builds; full engine integration remains**
 
 Implement the minimum services behind ioquake3's existing interfaces:
 
@@ -109,8 +109,22 @@ Implement the minimum services behind ioquake3's existing interfaces:
 - Networking: keep local/offline play first; add UDP/System Link only after the
   single-player loop is stable. [MEDIUM]
 
+Completed native service slice:
+
+- Xbox system timing, sleep, exit/error handling, paths, directory enumeration,
+  and conservative memory reporting live in `code/sys/sys_xbox.c`. [HIGH]
+- Controller input uses nxdk's native XID USB driver with all four controller
+  slots, analog face buttons/triggers, sticks, hot-plug callbacks, and
+  disconnect clearing. [HIGH]
+- Sound has a native AC97 PCM service with contiguous DMA buffer allocation,
+  a refill callback, silence fallback, and pause/shutdown control. [HIGH]
+- The shell's direct file probe now reads user-owned content from
+  `D:\baseq3\` without copying data into the source tree. Full pak search
+  integration is still pending. [MEDIUM]
+
 Exit: the executable reaches the engine console without SDL, desktop OpenGL,
-or proprietary XDK dependencies.
+or proprietary XDK dependencies, with the native services connected to the
+full qcommon/client boundary. [LOW]
 
 ### G3 — Native NV2A renderer bring-up
 

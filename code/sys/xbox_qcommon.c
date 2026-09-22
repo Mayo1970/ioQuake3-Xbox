@@ -13,6 +13,7 @@ This file is part of Quake III Arena source code.
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 cvar_t *com_developer;
 cvar_t *com_cl_running;
@@ -149,15 +150,47 @@ void CL_ForwardCommandToServer(const char *string) { (void)string; }
 
 long FS_ReadFile(const char *qpath, void **buffer)
 {
-	(void)qpath;
+	FILE *file;
+	long length;
+	void *data;
+
 	if (buffer)
 		*buffer = NULL;
-	return -1;
+	file = Sys_XboxOpenGameFile(qpath, "rb");
+	if (!file)
+		return -1;
+	if (fseek(file, 0, SEEK_END) != 0)
+	{
+		fclose(file);
+		return -1;
+	}
+	length = ftell(file);
+	if (length < 0 || fseek(file, 0, SEEK_SET) != 0)
+	{
+		fclose(file);
+		return -1;
+	}
+	if (!buffer)
+	{
+		fclose(file);
+		return length;
+	}
+	data = Z_Malloc((int)length + 1);
+	if (fread(data, 1, (size_t)length, file) != (size_t)length)
+	{
+		fclose(file);
+		Z_Free(data);
+		return -1;
+	}
+	fclose(file);
+	((byte *)data)[length] = '\0';
+	*buffer = data;
+	return length;
 }
 
 void FS_FreeFile(void *buffer)
 {
-	(void)buffer;
+	Z_Free(buffer);
 }
 
 int FS_Write(const void *buffer, int len, fileHandle_t f)
