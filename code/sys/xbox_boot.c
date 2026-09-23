@@ -13,14 +13,32 @@
 
 #define XBOX_STRINGIFY_VALUE(value) #value
 #define XBOX_STRINGIFY(value) XBOX_STRINGIFY_VALUE(value)
+/* DIAGNOSTIC: per-frame connection lines stop here so a stall cannot flood the log. */
+#define XBOX_DIAG_CONNECT_LINES 300
+
+/* DIAGNOSTIC: both netchan ends of the map-load connection; remove after. */
+static void XboxLogConnect(const char *tag)
+{
+	char server[160];
+
+	Sys_XboxServerTrace(server, sizeof(server));
+	Sys_XboxLog("Xbox %s: t=%d cl state=%d in=%d out=%d frag=%d/%d msg=%d %s\n", tag,
+		Sys_Milliseconds(), (int)clc.state, clc.netchan.incomingSequence,
+		clc.netchan.outgoingSequence, clc.netchan.fragmentSequence,
+		clc.netchan.fragmentLength, clc.serverMessageSequence, server);
+}
 
 int main(void)
 {
 	connstate_t lastState = CA_UNINITIALIZED;
+	int lastBeat = 0;
+	int connectLines = 0;
 	char commandLine[] =
 		"+set com_hunkMegs " XBOX_STRINGIFY(XBOX_COM_HUNK_MEGS)
 		" +set com_zoneMegs " XBOX_STRINGIFY(XBOX_COM_ZONE_MEGS)
 		" +set com_soundMegs " XBOX_STRINGIFY(XBOX_COM_SOUND_MEGS)
+		/* DIAGNOSTIC: ioq3's own netchan fragment and server-message trace; remove after. */
+		" +set showpackets 1 +set cl_shownet 2"
 #ifdef XBOX_DIAG_NO_CINEMATIC
 		/* DIAGNOSTIC bisection switch: any non-set command skips idlogo.RoQ. */
 		" +wait"
@@ -45,15 +63,26 @@ int main(void)
 		Cvar_VariableIntegerValue("com_soundMegs"),
 		Hunk_MemoryRemaining() / 1024);
 	Cmd_ExecuteString("meminfo");
+	Sys_XboxStartWatchdog(XboxLogConnect);
 
 	for (;;)
 	{
 		Com_Frame();
+		Sys_XboxDiagFrame();
 		/* DIAGNOSTIC: client connection state per frame, to locate map-load stalls; remove after. */
 		if (clc.state != lastState)
 		{
 			Sys_XboxLog("Xbox client: state %d -> %d\n", (int)lastState, (int)clc.state);
 			lastState = clc.state;
+		}
+		/* DIAGNOSTIC: every frame once connected, else once a second; lines stop on a hang. */
+		if (clc.state >= CA_CONNECTING && clc.state < CA_ACTIVE &&
+			connectLines < XBOX_DIAG_CONNECT_LINES &&
+			(clc.state >= CA_CONNECTED || Sys_Milliseconds() - lastBeat >= 1000))
+		{
+			lastBeat = Sys_Milliseconds();
+			connectLines++;
+			XboxLogConnect("connect");
 		}
 		if (Sys_XboxExitRequested())
 		{
