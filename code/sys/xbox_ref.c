@@ -53,12 +53,15 @@ static qhandle_t XboxRefRegisterModel(const char *name)
 
 static qhandle_t XboxRefRegisterSkin(const char *name)
 {
-	(void)name;
-	return 0;
+	return XboxNV2ASkin_Register(name);
 }
 
 static void XboxRefNoop(void) {}
-static void XboxRefLoadWorld(const char *name) { (void)name; }
+static void XboxRefLoadWorld(const char *name)
+{
+	XboxNV2AWorld_Load(name);
+}
+/* The world reads PVS rows through ri.CM_ClusterPVS instead. */
 static void XboxRefSetWorldVisData(const byte *vis) { (void)vis; }
 static void XboxRefClearScene(void)
 {
@@ -76,16 +79,12 @@ static void XboxRefAddPoly(qhandle_t shader, int numVerts,
 static int XboxRefLightForPoint(vec3_t point, vec3_t ambient,
 	vec3_t directed, vec3_t direction)
 {
-	(void)point;
-	VectorClear(ambient);
-	VectorClear(directed);
-	VectorClear(direction);
-	return 0;
+	return XboxNV2AWorld_LightGrid(point, ambient, directed, direction);
 }
 static void XboxRefAddLight(const vec3_t org, float intensity,
 	float r, float g, float b)
 {
-	(void)org; (void)intensity; (void)r; (void)g; (void)b;
+	XboxNV2A_AddLight(org, intensity, r, g, b);
 }
 static void XboxRefRenderScene(const refdef_t *fd)
 {
@@ -148,12 +147,11 @@ static void XboxRefRemapShader(const char *oldShader, const char *newShader,
 }
 static qboolean XboxRefGetEntityToken(char *buffer, int size)
 {
-	if (buffer && size > 0) buffer[0] = '\0';
-	return qfalse;
+	return XboxNV2AWorld_GetEntityToken(buffer, size);
 }
 static qboolean XboxRefInPVS(const vec3_t p1, const vec3_t p2)
 {
-	(void)p1; (void)p2; return qtrue;
+	return XboxNV2AWorld_InPVS(p1, p2);
 }
 static void XboxRefTakeVideoFrame(int h, int w, byte *capture,
 	byte *encode, qboolean motionJpeg)

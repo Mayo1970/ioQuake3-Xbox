@@ -1,4 +1,4 @@
-/* MD3 models for the NV2A renderer, following ioq3 tr_model.c and tr_surface.c. */
+/* MD3 models and skins for the NV2A renderer, following ioq3 tr_model.c and tr_image.c. */
 #include "xbox_nv2a.h"
 #include "../renderercommon/tr_common.h"
 #include "../sys/sys_xbox.h"
@@ -8,15 +8,33 @@
 #include <string.h>
 
 #define XBOX_NV2A_MAX_MODELS 256
+#define XBOX_NV2A_MAX_SKINS 256
+/* ioq3 MAX_SKIN_SURFACES. */
+#define XBOX_NV2A_MAX_SKIN_SURFACES 256
 
 typedef struct {
 	char name[MAX_QPATH];
 	md3Header_t *md3;
+	/* World submodel index for "*N" names, or -1. */
+	int brush;
 } xboxNV2AModel_t;
 
-/* Index 0 is the bad model; failed loads keep a NULL entry so they are not retried. */
+typedef struct {
+	char name[MAX_QPATH];
+	int shader;
+} xboxNV2ASkinSurface_t;
+
+typedef struct {
+	char name[MAX_QPATH];
+	int numSurfaces;
+	xboxNV2ASkinSurface_t *surfaces;
+} xboxNV2ASkin_t;
+
+/* Index 0 is the bad model; failed loads keep an empty entry so they are not retried. */
 static xboxNV2AModel_t xboxNV2AModels[XBOX_NV2A_MAX_MODELS];
 static int xboxNV2AModelCount = 1;
+static xboxNV2ASkin_t xboxNV2ASkins[XBOX_NV2A_MAX_SKINS];
+static int xboxNV2ASkinCount = 1;
 
 static qboolean XboxModelRange(int length, int offset, int bytes)
 {
@@ -111,7 +129,14 @@ static md3Header_t *XboxModelLoadMD3(const char *name)
 	surface = (md3Surface_t *)((byte *)md3 + md3->ofsSurfaces);
 	for (i = 0; i < md3->numSurfaces; ++i) {
 		md3Shader_t *shader = (md3Shader_t *)((byte *)surface + surface->ofsShaders);
+		size_t nameLength;
 
+		/* ioq3 lowercases surface names for skins and drops a q3data "_1"/"_2" suffix. */
+		surface->name[sizeof(surface->name) - 1] = '\0';
+		Q_strlwr(surface->name);
+		nameLength = strlen(surface->name);
+		if (nameLength > 2 && surface->name[nameLength - 2] == '_')
+			surface->name[nameLength - 2] = '\0';
 		for (j = 0; j < surface->numShaders; ++j, ++shader) {
 			shader->name[sizeof(shader->name) - 1] = '\0';
 			shader->shaderIndex = XboxNV2AShader_RegisterModel(shader->name);
@@ -123,25 +148,59 @@ static md3Header_t *XboxModelLoadMD3(const char *name)
 	return md3;
 }
 
-qhandle_t XboxNV2AModel_Register(const char *name)
+static xboxNV2AModel_t *XboxModelFind(const char *name)
 {
-	xboxNV2AModel_t *model;
 	int i;
 
-	if (!name || !*name || strlen(name) >= MAX_QPATH)
-		return 0;
 	for (i = 1; i < xboxNV2AModelCount; ++i) {
 		if (!Q_stricmp(xboxNV2AModels[i].name, name))
-			return xboxNV2AModels[i].md3 ? i : 0;
+			return &xboxNV2AModels[i];
 	}
+	return NULL;
+}
+
+static xboxNV2AModel_t *XboxModelAlloc(const char *name)
+{
+	xboxNV2AModel_t *model;
+
 	if (xboxNV2AModelCount >= XBOX_NV2A_MAX_MODELS) {
 		Sys_XboxLog("Xbox model: table full, skipped %s\n", name);
-		return 0;
+		return NULL;
 	}
 	model = &xboxNV2AModels[xboxNV2AModelCount++];
 	Q_strncpyz(model->name, name, sizeof(model->name));
-	model->md3 = XboxModelLoadMD3(name);
-	return model->md3 ? xboxNV2AModelCount - 1 : 0;
+	model->md3 = NULL;
+	model->brush = -1;
+	return model;
+}
+
+/* Brush models only exist once the world is loaded, so "*N" names never hit the file system. */
+qhandle_t XboxNV2AModel_Register(const char *name)
+{
+	xboxNV2AModel_t *model;
+
+	if (!name || !*name || strlen(name) >= MAX_QPATH)
+		return 0;
+	model = XboxModelFind(name);
+	if (!model) {
+		model = XboxModelAlloc(name);
+		if (!model)
+			return 0;
+		if (name[0] != '*')
+			model->md3 = XboxModelLoadMD3(name);
+	}
+	return (model->md3 || model->brush >= 0) ? (qhandle_t)(model - xboxNV2AModels) : 0;
+}
+
+/* ioq3 R_LoadSubmodels registers "*N" so cgame can look inline models up by name. */
+void XboxNV2AModel_RegisterBrush(const char *name, int submodel)
+{
+	xboxNV2AModel_t *model = XboxModelFind(name);
+
+	if (!model)
+		model = XboxModelAlloc(name);
+	if (model)
+		model->brush = submodel;
 }
 
 void XboxNV2AModel_FreeAll(void)
@@ -159,6 +218,13 @@ const md3Header_t *XboxNV2AModel_Get(qhandle_t handle)
 	if (handle <= 0 || handle >= xboxNV2AModelCount)
 		return NULL;
 	return xboxNV2AModels[handle].md3;
+}
+
+int XboxNV2AModel_BrushIndex(qhandle_t handle)
+{
+	if (handle <= 0 || handle >= xboxNV2AModelCount)
+		return -1;
+	return xboxNV2AModels[handle].brush;
 }
 
 /* ioq3 LerpMeshVertexes: decode 1/64 unit positions and lat/long normals. */
@@ -201,6 +267,10 @@ void XboxNV2AModel_Bounds(qhandle_t handle, vec3_t mins, vec3_t maxs)
 	const md3Header_t *md3 = XboxNV2AModel_Get(handle);
 	const md3Frame_t *frame;
 
+	if (XboxNV2AModel_BrushIndex(handle) >= 0) {
+		XboxNV2AWorld_SubmodelBounds(XboxNV2AModel_BrushIndex(handle), mins, maxs);
+		return;
+	}
 	if (!md3) {
 		VectorClear(mins);
 		VectorClear(maxs);
@@ -256,4 +326,152 @@ int XboxNV2AModel_LerpTag(orientation_t *tag, qhandle_t handle, int startFrame,
 	VectorNormalize(tag->axis[1]);
 	VectorNormalize(tag->axis[2]);
 	return qtrue;
+}
+
+/* ioq3 CommaParse: like COM_Parse, but a comma also ends a word. */
+static char *XboxSkinCommaParse(char **text)
+{
+	static char token[MAX_TOKEN_CHARS];
+	char *data = *text;
+	int length = 0;
+	int c = 0;
+
+	token[0] = '\0';
+	if (!data) {
+		*text = NULL;
+		return token;
+	}
+	for (;;) {
+		while ((c = *data) <= ' ' && c)
+			data++;
+		if (c == '/' && data[1] == '/') {
+			while (*data && *data != '\n')
+				data++;
+		} else if (c == '/' && data[1] == '*') {
+			data += 2;
+			while (*data && (*data != '*' || data[1] != '/'))
+				data++;
+			if (*data)
+				data += 2;
+		} else {
+			break;
+		}
+	}
+	if (!c)
+		return token;
+	if (c == '"') {
+		data++;
+		while ((c = *data++) != '"' && c) {
+			if (length < MAX_TOKEN_CHARS - 1)
+				token[length++] = (char)c;
+		}
+		token[length] = '\0';
+		*text = data;
+		return token;
+	}
+	do {
+		if (length < MAX_TOKEN_CHARS - 1)
+			token[length++] = (char)c;
+		c = *++data;
+	} while (c > 32 && c != ',');
+	token[length] = '\0';
+	*text = data;
+	return token;
+}
+
+/* ioq3 RE_RegisterSkin; failed loads keep an empty slot so they are not retried. */
+qhandle_t XboxNV2ASkin_Register(const char *name)
+{
+	xboxNV2ASkinSurface_t parsed[XBOX_NV2A_MAX_SKIN_SURFACES];
+	xboxNV2ASkin_t *skin;
+	size_t nameLength;
+	void *buffer = NULL;
+	char *text;
+	char *token;
+	int handle;
+
+	if (!name || !*name || (nameLength = strlen(name)) >= MAX_QPATH)
+		return 0;
+	for (handle = 1; handle < xboxNV2ASkinCount; ++handle) {
+		if (!Q_stricmp(xboxNV2ASkins[handle].name, name))
+			return xboxNV2ASkins[handle].numSurfaces ? handle : 0;
+	}
+	if (xboxNV2ASkinCount >= XBOX_NV2A_MAX_SKINS) {
+		Sys_XboxLog("Xbox skin: table full, skipped %s\n", name);
+		return 0;
+	}
+	handle = xboxNV2ASkinCount++;
+	skin = &xboxNV2ASkins[handle];
+	Q_strncpyz(skin->name, name, sizeof(skin->name));
+	skin->numSurfaces = 0;
+	skin->surfaces = NULL;
+
+	/* A name without ".skin" is a single shader that matches no MD3 surface, as in ioq3. */
+	if (nameLength < 5 || Q_stricmp(name + nameLength - 5, ".skin")) {
+		parsed[0].name[0] = '\0';
+		parsed[0].shader = XboxNV2AShader_RegisterModel(name);
+		skin->numSurfaces = 1;
+	} else {
+		if (ri.FS_ReadFile(name, &buffer) <= 0 || !buffer)
+			return 0;
+		text = (char *)buffer;
+		while (text && *text) {
+			char surfaceName[MAX_QPATH];
+
+			token = XboxSkinCommaParse(&text);
+			if (!token[0])
+				break;
+			Q_strncpyz(surfaceName, token, sizeof(surfaceName));
+			Q_strlwr(surfaceName);
+			if (*text == ',')
+				text++;
+			if (strstr(surfaceName, "tag_"))
+				continue;
+			token = XboxSkinCommaParse(&text);
+			if (skin->numSurfaces < XBOX_NV2A_MAX_SKIN_SURFACES) {
+				xboxNV2ASkinSurface_t *surface = &parsed[skin->numSurfaces++];
+
+				Q_strncpyz(surface->name, surfaceName, sizeof(surface->name));
+				surface->shader = XboxNV2AShader_RegisterModel(token);
+			}
+		}
+		ri.FS_FreeFile(buffer);
+		if (!skin->numSurfaces)
+			return 0;
+	}
+	skin->surfaces = (xboxNV2ASkinSurface_t *)malloc((size_t)skin->numSurfaces *
+		sizeof(*skin->surfaces));
+	if (!skin->surfaces) {
+		skin->numSurfaces = 0;
+		return 0;
+	}
+	memcpy(skin->surfaces, parsed, (size_t)skin->numSurfaces * sizeof(*skin->surfaces));
+	Sys_XboxLog("Xbox skin: %s surfaces=%d\n", name, skin->numSurfaces);
+	return handle;
+}
+
+/* ioq3 R_AddMD3Surfaces: a surface missing from the skin gets no shader. */
+int XboxNV2ASkin_Shader(qhandle_t handle, const char *surfaceName)
+{
+	const xboxNV2ASkin_t *skin;
+	int i;
+
+	if (handle <= 0 || handle >= xboxNV2ASkinCount)
+		return 0;
+	skin = &xboxNV2ASkins[handle];
+	for (i = 0; i < skin->numSurfaces; ++i) {
+		if (!strcmp(skin->surfaces[i].name, surfaceName))
+			return skin->surfaces[i].shader;
+	}
+	return 0;
+}
+
+void XboxNV2ASkin_FreeAll(void)
+{
+	int i;
+
+	for (i = 1; i < xboxNV2ASkinCount; ++i)
+		free(xboxNV2ASkins[i].surfaces);
+	memset(xboxNV2ASkins, 0, sizeof(xboxNV2ASkins));
+	xboxNV2ASkinCount = 1;
 }

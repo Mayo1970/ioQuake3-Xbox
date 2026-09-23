@@ -29,6 +29,16 @@
   /src/code/sys/../qcommon/qcommon.h \
   /src/code/sys/../qcommon/../qcommon/cm_public.h \
   /src/code/sys/../qcommon/../qcommon/qfiles.h \
+  /src/code/sys/../client/client.h \
+  /src/code/sys/../client/../qcommon/q_shared.h \
+  /src/code/sys/../client/../qcommon/qcommon.h \
+  /src/code/sys/../client/../renderercommon/tr_public.h \
+  /src/code/sys/../client/../renderercommon/tr_types.h \
+  /src/code/sys/../client/../ui/ui_public.h \
+  /src/code/sys/../client/keys.h /src/code/sys/../client/keycodes.h \
+  /src/code/sys/../client/snd_public.h \
+  /src/code/sys/../client/../cgame/cg_public.h \
+  /src/code/sys/../client/../game/bg_public.h \
   /usr/src/nxdk/lib/hal/video.h /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h \
   /usr/src/nxdk/lib/xboxkrnl/xboxdef.h \
   /usr/src/nxdk/lib/xboxkrnl/ntstatus.h
@@ -63,6 +73,17 @@
 /src/code/sys/../qcommon/qcommon.h:
 /src/code/sys/../qcommon/../qcommon/cm_public.h:
 /src/code/sys/../qcommon/../qcommon/qfiles.h:
+/src/code/sys/../client/client.h:
+/src/code/sys/../client/../qcommon/q_shared.h:
+/src/code/sys/../client/../qcommon/qcommon.h:
+/src/code/sys/../client/../renderercommon/tr_public.h:
+/src/code/sys/../client/../renderercommon/tr_types.h:
+/src/code/sys/../client/../ui/ui_public.h:
+/src/code/sys/../client/keys.h:
+/src/code/sys/../client/keycodes.h:
+/src/code/sys/../client/snd_public.h:
+/src/code/sys/../client/../cgame/cg_public.h:
+/src/code/sys/../client/../game/bg_public.h:
 /usr/src/nxdk/lib/hal/video.h:
 /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h:
 /usr/src/nxdk/lib/xboxkrnl/xboxdef.h:
