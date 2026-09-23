@@ -16,7 +16,8 @@
 #include <string.h>
 #include <fileapi.h>
 
-#define XBOX_LOG_FLUSH_MSEC 250
+/* DIAGNOSTIC: 0 flushes every line to find the crash point; restore 250 after. */
+#define XBOX_LOG_FLUSH_MSEC 0
 #define XBOX_FATAL_DISPLAY_MSEC 10000
 
 static volatile int xboxExitRequested;

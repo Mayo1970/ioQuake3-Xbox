@@ -24,7 +24,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../qcommon/q_shared.h"
 #include "../renderercommon/tr_public.h"
+#ifdef XBOX
+// The NV2A renderer has no GL; the shared image loaders only need this type.
+typedef unsigned int GLuint;
+#else
 #include "qgl.h"
+#endif
 
 typedef enum
 {

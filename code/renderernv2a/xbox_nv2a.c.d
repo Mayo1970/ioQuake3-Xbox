@@ -29,20 +29,13 @@
   /src/code/renderernv2a/../qcommon/surfaceflags.h \
   /src/code/renderernv2a/../renderercommon/tr_public.h \
   /src/code/renderernv2a/../renderercommon/tr_types.h \
+  /src/code/renderernv2a/../qcommon/qcommon.h \
+  /src/code/renderernv2a/../qcommon/../qcommon/cm_public.h \
+  /src/code/renderernv2a/../qcommon/../qcommon/qfiles.h \
   /src/code/renderernv2a/../sys/sys_xbox.h /usr/src/nxdk/lib/hal/video.h \
   /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h \
   /usr/src/nxdk/lib/xboxkrnl/xboxdef.h \
-  /usr/src/nxdk/lib/xboxkrnl/ntstatus.h /usr/src/nxdk/lib/pbkit/pbkit.h \
-  /usr/src/nxdk/lib/pdclib/include/stdbool.h \
-  /usr/src/nxdk/lib/pbkit/outer.h /usr/src/nxdk/lib/pbkit/nv_objects.h \
-  /usr/src/nxdk/lib/pbkit/nv_regs.h \
-  /usr/src/nxdk/lib/pbkit/pbkit_gamma.h \
-  /usr/src/nxdk/lib/pbkit/pbkit_dma.h \
-  /usr/src/nxdk/lib/pbkit/pbkit_draw.h \
-  /usr/src/nxdk/lib/pbkit/pbkit_framebuffer.h \
-  /usr/src/nxdk/lib/pbkit/pbkit_print.h \
-  /usr/src/nxdk/lib/pbkit/pbkit_pushbuffer.h \
-  /usr/src/nxdk/lib/xboxrt/libc_extensions/strings.h \
+  /usr/src/nxdk/lib/xboxkrnl/ntstatus.h \
   /usr/src/nxdk/lib/winapi/windows.h /usr/src/nxdk/lib/winapi/debugapi.h \
   /usr/src/nxdk/lib/winapi/windef.h \
   /usr/src/nxdk/lib/winapi/errhandlingapi.h \
@@ -60,6 +53,19 @@
   /usr/src/nxdk/lib/winapi/sysinfoapi.h \
   /usr/src/nxdk/lib/winapi/timezoneapi.h \
   /usr/src/nxdk/lib/winapi/winerror.h \
+  /src/code/renderernv2a/../thirdparty/xgu/xgu.h \
+  /usr/src/nxdk/lib/pbkit/pbkit.h \
+  /usr/src/nxdk/lib/pdclib/include/stdbool.h \
+  /usr/src/nxdk/lib/pbkit/outer.h /usr/src/nxdk/lib/pbkit/nv_objects.h \
+  /usr/src/nxdk/lib/pbkit/nv_regs.h \
+  /usr/src/nxdk/lib/pbkit/pbkit_gamma.h \
+  /usr/src/nxdk/lib/pbkit/pbkit_dma.h \
+  /usr/src/nxdk/lib/pbkit/pbkit_draw.h \
+  /usr/src/nxdk/lib/pbkit/pbkit_framebuffer.h \
+  /usr/src/nxdk/lib/pbkit/pbkit_print.h \
+  /usr/src/nxdk/lib/pbkit/pbkit_pushbuffer.h \
+  /src/code/renderernv2a/../thirdparty/xgu/nv2a_regs.h \
+  /src/code/renderernv2a/../thirdparty/xgu/xgux.h \
   /src/code/renderernv2a/xbox_nv2a_vp.inl \
   /src/code/renderernv2a/xbox_nv2a_fp.inl
 /src/code/renderernv2a/xbox_nv2a.h:
@@ -92,23 +98,14 @@
 /src/code/renderernv2a/../qcommon/surfaceflags.h:
 /src/code/renderernv2a/../renderercommon/tr_public.h:
 /src/code/renderernv2a/../renderercommon/tr_types.h:
+/src/code/renderernv2a/../qcommon/qcommon.h:
+/src/code/renderernv2a/../qcommon/../qcommon/cm_public.h:
+/src/code/renderernv2a/../qcommon/../qcommon/qfiles.h:
 /src/code/renderernv2a/../sys/sys_xbox.h:
 /usr/src/nxdk/lib/hal/video.h:
 /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h:
 /usr/src/nxdk/lib/xboxkrnl/xboxdef.h:
 /usr/src/nxdk/lib/xboxkrnl/ntstatus.h:
-/usr/src/nxdk/lib/pbkit/pbkit.h:
-/usr/src/nxdk/lib/pdclib/include/stdbool.h:
-/usr/src/nxdk/lib/pbkit/outer.h:
-/usr/src/nxdk/lib/pbkit/nv_objects.h:
-/usr/src/nxdk/lib/pbkit/nv_regs.h:
-/usr/src/nxdk/lib/pbkit/pbkit_gamma.h:
-/usr/src/nxdk/lib/pbkit/pbkit_dma.h:
-/usr/src/nxdk/lib/pbkit/pbkit_draw.h:
-/usr/src/nxdk/lib/pbkit/pbkit_framebuffer.h:
-/usr/src/nxdk/lib/pbkit/pbkit_print.h:
-/usr/src/nxdk/lib/pbkit/pbkit_pushbuffer.h:
-/usr/src/nxdk/lib/xboxrt/libc_extensions/strings.h:
 /usr/src/nxdk/lib/winapi/windows.h:
 /usr/src/nxdk/lib/winapi/debugapi.h:
 /usr/src/nxdk/lib/winapi/windef.h:
@@ -129,5 +126,19 @@
 /usr/src/nxdk/lib/winapi/sysinfoapi.h:
 /usr/src/nxdk/lib/winapi/timezoneapi.h:
 /usr/src/nxdk/lib/winapi/winerror.h:
+/src/code/renderernv2a/../thirdparty/xgu/xgu.h:
+/usr/src/nxdk/lib/pbkit/pbkit.h:
+/usr/src/nxdk/lib/pdclib/include/stdbool.h:
+/usr/src/nxdk/lib/pbkit/outer.h:
+/usr/src/nxdk/lib/pbkit/nv_objects.h:
+/usr/src/nxdk/lib/pbkit/nv_regs.h:
+/usr/src/nxdk/lib/pbkit/pbkit_gamma.h:
+/usr/src/nxdk/lib/pbkit/pbkit_dma.h:
+/usr/src/nxdk/lib/pbkit/pbkit_draw.h:
+/usr/src/nxdk/lib/pbkit/pbkit_framebuffer.h:
+/usr/src/nxdk/lib/pbkit/pbkit_print.h:
+/usr/src/nxdk/lib/pbkit/pbkit_pushbuffer.h:
+/src/code/renderernv2a/../thirdparty/xgu/nv2a_regs.h:
+/src/code/renderernv2a/../thirdparty/xgu/xgux.h:
 /src/code/renderernv2a/xbox_nv2a_vp.inl:
 /src/code/renderernv2a/xbox_nv2a_fp.inl:

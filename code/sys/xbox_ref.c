@@ -6,114 +6,34 @@
 #include <stdlib.h>
 #include <string.h>
 
-static refexport_t xboxRefExport;
-static refimport_t xboxRefImport;
+/* The ioq3 image loaders (tr_image_*.c) read this global. */
+refimport_t ri;
 
-static unsigned int XboxRefReadLE16(const byte *p)
+static refexport_t xboxRefExport;
+
+/* Decoded images are transient; keep them out of the 8 MiB zone. */
+static void *XboxRefMalloc(int bytes)
 {
-	return (unsigned int)p[0] | ((unsigned int)p[1] << 8);
+	void *memory = malloc((size_t)(bytes > 0 ? bytes : 1));
+
+	if (!memory)
+		ri.Error(ERR_DROP, "Xbox ref: out of memory for %d bytes", bytes);
+	return memory;
 }
 
-static qboolean XboxRefIsPowerOfTwo(unsigned int value)
+static void XboxRefFree(void *memory)
 {
-	return value != 0 && (value & (value - 1)) == 0;
+	free(memory);
 }
 
 static qhandle_t XboxRefRegisterShader(const char *name)
 {
-	char path[MAX_QPATH];
-	void *fileBuffer = NULL;
-	byte *rgba = NULL;
-	const byte *file;
-	long fileLength;
-	unsigned int idLength, colorMapType, imageType, width, height, bits;
-	unsigned int pixelBytes, descriptor, x, pixel;
-	size_t outputBytes;
-	qhandle_t handle = 0;
+	return XboxNV2AShader_Register(name, qtrue);
+}
 
-	if (!name || !*name || !xboxRefImport.FS_ReadFile ||
-		!xboxRefImport.FS_FreeFile)
-		return 0;
-	if (!Q_stricmp(name, "white"))
-		return XBOX_NV2A_WHITE_TEXTURE;
-	Q_strncpyz(path, name, sizeof(path));
-	if (!strrchr(path, '.') || Q_stricmp(strrchr(path, '.'), ".tga"))
-		Q_strcat(path, sizeof(path), ".tga");
-	fileLength = xboxRefImport.FS_ReadFile(path, &fileBuffer);
-	if (fileLength < 18 || !fileBuffer) {
-		if (fileBuffer)
-			xboxRefImport.FS_FreeFile(fileBuffer);
-		return 0;
-	}
-	file = (const byte *)fileBuffer;
-	idLength = file[0];
-	colorMapType = file[1];
-	imageType = file[2];
-	width = XboxRefReadLE16(file + 12);
-	height = XboxRefReadLE16(file + 14);
-	bits = file[16];
-	descriptor = file[17];
-	pixelBytes = bits / 8;
-	if (colorMapType != 0 || (imageType != 2 && imageType != 10) ||
-		(width == 0) || (height == 0) || (bits != 24 && bits != 32) ||
-		!XboxRefIsPowerOfTwo(width) || !XboxRefIsPowerOfTwo(height) ||
-		width > XBOX_NV2A_MAX_TEXTURE_SIZE || height > XBOX_NV2A_MAX_TEXTURE_SIZE ||
-		fileLength < 18 + (long)idLength) {
-		xboxRefImport.FS_FreeFile(fileBuffer);
-		return 0;
-	}
-	outputBytes = (size_t)width * height * 4;
-	rgba = (byte *)malloc(outputBytes);
-	if (!rgba) {
-		xboxRefImport.FS_FreeFile(fileBuffer);
-		return 0;
-	}
-	file += 18 + idLength;
-	fileLength -= 18 + idLength;
-	pixel = 0;
-	while (pixel < width * height) {
-		unsigned int runLength = 1;
-		qboolean runPacket = qfalse;
-		unsigned int packet;
-		if (imageType == 10) {
-			if (fileLength < 1)
-				goto tga_done;
-			packet = *file++;
-			--fileLength;
-			runPacket = (packet & 0x80) != 0;
-			runLength = (packet & 0x7f) + 1;
-			if (runLength > width * height - pixel)
-				goto tga_done;
-		}
-		for (x = 0; x < runLength; ++x) {
-			const byte *source;
-			unsigned int targetPixel = pixel + x;
-			unsigned int sourceX = targetPixel % width;
-			unsigned int sourceY = targetPixel / width;
-			unsigned int targetX = (descriptor & 0x10) ? width - 1 - sourceX : sourceX;
-			unsigned int targetY = (descriptor & 0x20) ? sourceY : height - 1 - sourceY;
-			byte *target = rgba + ((size_t)targetY * width + targetX) * 4;
-			if (runPacket && x != 0) {
-				source = file - pixelBytes;
-			} else {
-				if (fileLength < (long)pixelBytes)
-					goto tga_done;
-				source = file;
-				file += pixelBytes;
-				fileLength -= pixelBytes;
-			}
-			target[0] = source[2];
-			target[1] = source[1];
-			target[2] = source[0];
-			target[3] = (pixelBytes == 4) ? source[3] : 255;
-		}
-		pixel += runLength;
-	}
-	handle = XboxNV2A_RegisterTexture(path, (int)width, (int)height, rgba);
-tga_done:
-	free(rgba);
-	xboxRefImport.FS_FreeFile(fileBuffer);
-	return handle;
+static qhandle_t XboxRefRegisterShaderNoMip(const char *name)
+{
+	return XboxNV2AShader_Register(name, qfalse);
 }
 
 static void XboxRefShutdown(qboolean destroyWindow)
@@ -242,7 +162,9 @@ refexport_t *GetRefAPI(int apiVersion, refimport_t *rimp)
 {
 	if (apiVersion != REF_API_VERSION || !rimp)
 		return NULL;
-	xboxRefImport = *rimp;
+	ri = *rimp;
+	ri.Malloc = XboxRefMalloc;
+	ri.Free = XboxRefFree;
 	if (!XboxNV2A_Init())
 		return NULL;
 
@@ -252,7 +174,7 @@ refexport_t *GetRefAPI(int apiVersion, refimport_t *rimp)
 	xboxRefExport.RegisterModel = XboxRefRegisterModel;
 	xboxRefExport.RegisterSkin = XboxRefRegisterSkin;
 	xboxRefExport.RegisterShader = XboxRefRegisterShader;
-	xboxRefExport.RegisterShaderNoMip = XboxRefRegisterShader;
+	xboxRefExport.RegisterShaderNoMip = XboxRefRegisterShaderNoMip;
 	xboxRefExport.LoadWorld = XboxRefLoadWorld;
 	xboxRefExport.SetWorldVisData = XboxRefSetWorldVisData;
 	xboxRefExport.EndRegistration = XboxRefNoop;

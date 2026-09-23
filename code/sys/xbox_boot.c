@@ -24,7 +24,12 @@ int main(void)
 	char commandLine[] =
 		"+set com_hunkMegs " XBOX_STRINGIFY(XBOX_COM_HUNK_MEGS)
 		" +set com_zoneMegs " XBOX_STRINGIFY(XBOX_COM_ZONE_MEGS)
-		" +set com_soundMegs " XBOX_STRINGIFY(XBOX_COM_SOUND_MEGS);
+		" +set com_soundMegs " XBOX_STRINGIFY(XBOX_COM_SOUND_MEGS)
+#ifdef XBOX_DIAG_NO_CINEMATIC
+		/* DIAGNOSTIC bisection switch: any non-set command skips idlogo.RoQ. */
+		" +wait"
+#endif
+		;
 
 	XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
 	Sys_XboxLogOpen();

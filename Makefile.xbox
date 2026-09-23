@@ -1,9 +1,5 @@
-# Native OG Xbox engine-shell target.
-#
-# This file is intentionally independent of the host CMake build.  The Xbox
-# target links the real qcommon/client/server shell, with the renderer and
-# audio boundaries supplied by native Xbox shims. No SDL, OpenGL, or desktop
-# platform libraries enter this target.
+# Native OG Xbox target, independent of the host CMake build.
+# No SDL, OpenGL, or desktop platform libraries enter this target.
 
 XBE_TITLE = ioQuake3
 OUTPUT_DIR = build_xbox
@@ -17,7 +13,7 @@ SRCS = \
 	$(CURDIR)/code/sys/xbox_snd.c \
 	$(CURDIR)/code/sys/xbox_snd_engine.c \
 	$(CURDIR)/code/sys/xbox_ref.c \
-	$(CURDIR)/code/renderernv2a/xbox_nv2a.c \
+	$(CURDIR)/code/renderernv2a/xbox_nv2a.c 	$(CURDIR)/code/renderernv2a/xbox_nv2a_shader.c 	$(CURDIR)/code/renderercommon/tr_image_tga.c 	$(CURDIR)/code/renderercommon/tr_image_jpg.c \
 	$(CURDIR)/code/sys/xbox_qcommon.c \
 	$(CURDIR)/code/qcommon/cm_load.c \
 	$(CURDIR)/code/qcommon/cm_patch.c \
@@ -70,12 +66,11 @@ SRCS = \
 	$(CURDIR)/code/server/sv_snapshot.c \
 	$(CURDIR)/code/server/sv_world.c \
 	$(CURDIR)/code/asm/ftola.c \
-	$(CURDIR)/code/asm/snapvector.c
+	$(CURDIR)/code/asm/snapvector.c 	$(wildcard $(CURDIR)/code/thirdparty/jpeg-9f/j*.c)
 
-# nxdk supplies the target ABI and its Pentium III-safe defaults.  Keep the
-# target marker explicit so later platform conditionals do not depend on an
-# incidental compiler macro.
-NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DIOQUAKE3_XBOX_SHELL -DBOTLIB -DC_ONLY -O2 -ffunction-sections -fno-exceptions \
+# nxdk supplies the Pentium III-safe ABI; XBOX is explicit so conditionals
+# never depend on an incidental compiler macro.
+NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DIOQUAKE3_XBOX_SHELL -DBOTLIB -DC_ONLY -O2 -ffunction-sections -fno-exceptions 	-DUSE_INTERNAL_JPEG -I$(CURDIR)/code/thirdparty/jpeg-9f \
 	-I/usr/src/nxdk/lib/net/lwip/src/include \
 	-I/usr/src/nxdk/lib/net/lwip/src/include/compat/posix
 NXDK_NET = y
@@ -83,16 +78,14 @@ SHADER_OBJS = \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a_vp.inl \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a_fp.inl
 
-# The native XID and AC97 services remain independent of the client engine.
 # nxdk's base USB library includes the XID driver.
 
 NXDK_DIR ?= /usr/src/nxdk
 
 include $(NXDK_DIR)/Makefile
 
-# nxdk-link hard-codes a 64 KiB stack before appending user flags, and lld
-# keeps that first stack setting.  Use the same linker recipe with a 1 MiB
-# stack for the full Com_Init client/server initialization graph.
+# nxdk-link hard-codes a 64 KiB stack that lld keeps; Com_Init needs 1 MiB,
+# so repeat the link recipe with a larger stack.
 LD = lld -flavor link -subsystem:windows -fixed -base:0x00010000 -stack:1048576 -merge:.edata=.edataxb
 
 # This fragment is authored in nvparse syntax, so feed it directly to FP20.
