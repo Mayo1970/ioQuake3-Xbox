@@ -1,5 +1,9 @@
 /* Small nxdk ABI shims that are not supplied by the Xbox C runtime. */
+#include <assert.h>
 #include <stdlib.h>
+
+#include "sys_xbox.h"
+#include "../renderernv2a/xbox_nv2a.h"
 
 /* Keep atof out of the nxdk strtod assertion path used by this target. */
 double atof(const char *text)
@@ -47,9 +51,15 @@ double atof(const char *text)
 	return sign * value;
 }
 
-void __xbox_assert(const char *expression, const char *file, int line)
+/* Replaces pdclib's handler, which halts with its text on the hidden debug screen. */
+void _xbox_assert(char const * const expression, char const * const file_name,
+	char const * const function_name, unsigned long line)
 {
-	(void)expression;
-	(void)file;
-	(void)line;
+	XboxNV2A_ShowDebugScreen();
+	Sys_XboxLog("Assertion failed: '%s' in function '%s', file '%s', line %lu\n",
+		expression, function_name, file_name, line);
+	Sys_XboxPlatformShutdown();
+	__asm__ __volatile__("cli\n1:\nhlt\njmp 1b" ::: "memory");
+	for (;;)
+		;
 }

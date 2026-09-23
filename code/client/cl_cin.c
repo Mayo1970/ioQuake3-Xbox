@@ -69,9 +69,11 @@ static	long				ROQ_UB_tab[256];
 static	long				ROQ_UG_tab[256];
 static	long				ROQ_VG_tab[256];
 static	long				ROQ_VR_tab[256];
+#ifndef XBOX
 static	unsigned short		vq2[256*16*4];
 static	unsigned short		vq4[256*64*4];
 static	unsigned short		vq8[256*256*4];
+#endif
 
 
 typedef struct {
@@ -86,6 +88,23 @@ typedef struct {
 
 	int					currentHandle;
 } cinematics_t;
+
+#ifdef XBOX
+// Decoder state is 2.9 MiB; allocate it only while a cinematic is open.
+typedef struct {
+	unsigned short		vq2[256*16*4];
+	unsigned short		vq4[256*64*4];
+	unsigned short		vq8[256*256*4];
+	cinematics_t		cin;
+} cinStorage_t;
+
+static cinStorage_t		*cinStorage;
+
+#define vq2 (cinStorage->vq2)
+#define vq4 (cinStorage->vq4)
+#define vq8 (cinStorage->vq8)
+#define cin (cinStorage->cin)
+#endif
 
 typedef struct {
 	char				fileName[MAX_OSPATH];
@@ -127,12 +146,35 @@ typedef struct {
 	long				drawX, drawY;
 } cin_cache;
 
+#ifndef XBOX
 static cinematics_t		cin;
+#endif
 static cin_cache		cinTable[MAX_VIDEO_HANDLES];
 static int				currentHandle = -1;
 static int				CL_handle = -1;
 
 extern int				s_soundtime;		// sample PAIRS
+
+#ifdef XBOX
+static void CIN_XboxReleaseStorage(void) {
+	int		i;
+
+	if (!cinStorage) {
+		return;
+	}
+	for ( i = 0 ; i < MAX_VIDEO_HANDLES ; i++ ) {
+		if (cinTable[i].fileName[0] != 0) {
+			return;
+		}
+	}
+	// Stale buf pointers would dangle; Draw/Upload skip handles without one.
+	for ( i = 0 ; i < MAX_VIDEO_HANDLES ; i++ ) {
+		cinTable[i].buf = NULL;
+	}
+	free(cinStorage);
+	cinStorage = NULL;
+}
+#endif
 
 
 void CIN_CloseAllVideos(void) {
@@ -1322,6 +1364,9 @@ e_status CIN_StopCinematic(int handle) {
 	}
 	cinTable[currentHandle].status = FMV_EOF;
 	RoQShutdown();
+#ifdef XBOX
+	CIN_XboxReleaseStorage();
+#endif
 
 	return FMV_EOF;
 }
@@ -1341,6 +1386,9 @@ e_status CIN_RunCinematic (int handle)
 	int     thisTime = 0;
 
 	if (handle < 0 || handle>= MAX_VIDEO_HANDLES || cinTable[handle].status == FMV_EOF) return FMV_EOF;
+#ifdef XBOX
+	if (!cinStorage) return FMV_EOF;
+#endif
 
 	if (cin.currentHandle != handle) {
 		currentHandle = handle;
@@ -1427,6 +1475,15 @@ int CIN_PlayCinematic( const char *arg, int x, int y, int w, int h, int systemBi
 
 	Com_DPrintf("CIN_PlayCinematic( %s )\n", arg);
 
+#ifdef XBOX
+	if (!cinStorage) {
+		cinStorage = malloc(sizeof(*cinStorage));
+		if (!cinStorage) {
+			Com_Printf("CIN_PlayCinematic: no memory for %s\n", arg);
+			return -1;
+		}
+	}
+#endif
 	Com_Memset(&cin, 0, sizeof(cinematics_t) );
 	currentHandle = CIN_HandleForVideo();
 
@@ -1440,6 +1497,9 @@ int CIN_PlayCinematic( const char *arg, int x, int y, int w, int h, int systemBi
 	if (cinTable[currentHandle].ROQSize<=0) {
 		Com_DPrintf("play(%s), ROQSize<=0\n", arg);
 		cinTable[currentHandle].fileName[0] = 0;
+#ifdef XBOX
+		CIN_XboxReleaseStorage();
+#endif
 		return -1;
 	}
 
@@ -1491,6 +1551,9 @@ int CIN_PlayCinematic( const char *arg, int x, int y, int w, int h, int systemBi
 	Com_DPrintf("trFMV::play(), invalid RoQ ID\n");
 
 	RoQShutdown();
+#ifdef XBOX
+	CIN_XboxReleaseStorage();
+#endif
 	return -1;
 }
 

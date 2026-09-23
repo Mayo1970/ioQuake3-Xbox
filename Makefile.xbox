@@ -5,7 +5,7 @@
 # audio boundaries supplied by native Xbox shims. No SDL, OpenGL, or desktop
 # platform libraries enter this target.
 
-XBE_TITLE = ioQuake3 Xbox engine shell
+XBE_TITLE = ioQuake3
 OUTPUT_DIR = build_xbox
 
 SRCS = \
@@ -94,3 +94,9 @@ include $(NXDK_DIR)/Makefile
 # keeps that first stack setting.  Use the same linker recipe with a 1 MiB
 # stack for the full Com_Init client/server initialization graph.
 LD = lld -flavor link -subsystem:windows -fixed -base:0x00010000 -stack:1048576 -merge:.edata=.edataxb
+
+# This fragment is authored in nvparse syntax, so feed it directly to FP20.
+$(CURDIR)/code/renderernv2a/xbox_nv2a_fp.inl: \
+	$(CURDIR)/code/renderernv2a/xbox_nv2a_fp.ps | fp20compiler
+	@echo "[ FP20     ] $@"
+	$(FP20COMPILER) $< > $@

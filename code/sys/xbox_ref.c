@@ -1,12 +1,120 @@
-/* In-process ref API used until the native NV2A renderer lands in G3. */
+/* Minimal in-process ref API for the native Xbox renderer shell. */
 #include "../qcommon/q_shared.h"
 #include "../renderercommon/tr_public.h"
 #include "../renderernv2a/xbox_nv2a.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 static refexport_t xboxRefExport;
-static qhandle_t xboxRefNextShader = 1;
+static refimport_t xboxRefImport;
+
+static unsigned int XboxRefReadLE16(const byte *p)
+{
+	return (unsigned int)p[0] | ((unsigned int)p[1] << 8);
+}
+
+static qboolean XboxRefIsPowerOfTwo(unsigned int value)
+{
+	return value != 0 && (value & (value - 1)) == 0;
+}
+
+static qhandle_t XboxRefRegisterShader(const char *name)
+{
+	char path[MAX_QPATH];
+	void *fileBuffer = NULL;
+	byte *rgba = NULL;
+	const byte *file;
+	long fileLength;
+	unsigned int idLength, colorMapType, imageType, width, height, bits;
+	unsigned int pixelBytes, descriptor, x, pixel;
+	size_t outputBytes;
+	qhandle_t handle = 0;
+
+	if (!name || !*name || !xboxRefImport.FS_ReadFile ||
+		!xboxRefImport.FS_FreeFile)
+		return 0;
+	if (!Q_stricmp(name, "white"))
+		return XBOX_NV2A_WHITE_TEXTURE;
+	Q_strncpyz(path, name, sizeof(path));
+	if (!strrchr(path, '.') || Q_stricmp(strrchr(path, '.'), ".tga"))
+		Q_strcat(path, sizeof(path), ".tga");
+	fileLength = xboxRefImport.FS_ReadFile(path, &fileBuffer);
+	if (fileLength < 18 || !fileBuffer) {
+		if (fileBuffer)
+			xboxRefImport.FS_FreeFile(fileBuffer);
+		return 0;
+	}
+	file = (const byte *)fileBuffer;
+	idLength = file[0];
+	colorMapType = file[1];
+	imageType = file[2];
+	width = XboxRefReadLE16(file + 12);
+	height = XboxRefReadLE16(file + 14);
+	bits = file[16];
+	descriptor = file[17];
+	pixelBytes = bits / 8;
+	if (colorMapType != 0 || (imageType != 2 && imageType != 10) ||
+		(width == 0) || (height == 0) || (bits != 24 && bits != 32) ||
+		!XboxRefIsPowerOfTwo(width) || !XboxRefIsPowerOfTwo(height) ||
+		width > XBOX_NV2A_MAX_TEXTURE_SIZE || height > XBOX_NV2A_MAX_TEXTURE_SIZE ||
+		fileLength < 18 + (long)idLength) {
+		xboxRefImport.FS_FreeFile(fileBuffer);
+		return 0;
+	}
+	outputBytes = (size_t)width * height * 4;
+	rgba = (byte *)malloc(outputBytes);
+	if (!rgba) {
+		xboxRefImport.FS_FreeFile(fileBuffer);
+		return 0;
+	}
+	file += 18 + idLength;
+	fileLength -= 18 + idLength;
+	pixel = 0;
+	while (pixel < width * height) {
+		unsigned int runLength = 1;
+		qboolean runPacket = qfalse;
+		unsigned int packet;
+		if (imageType == 10) {
+			if (fileLength < 1)
+				goto tga_done;
+			packet = *file++;
+			--fileLength;
+			runPacket = (packet & 0x80) != 0;
+			runLength = (packet & 0x7f) + 1;
+			if (runLength > width * height - pixel)
+				goto tga_done;
+		}
+		for (x = 0; x < runLength; ++x) {
+			const byte *source;
+			unsigned int targetPixel = pixel + x;
+			unsigned int sourceX = targetPixel % width;
+			unsigned int sourceY = targetPixel / width;
+			unsigned int targetX = (descriptor & 0x10) ? width - 1 - sourceX : sourceX;
+			unsigned int targetY = (descriptor & 0x20) ? sourceY : height - 1 - sourceY;
+			byte *target = rgba + ((size_t)targetY * width + targetX) * 4;
+			if (runPacket && x != 0) {
+				source = file - pixelBytes;
+			} else {
+				if (fileLength < (long)pixelBytes)
+					goto tga_done;
+				source = file;
+				file += pixelBytes;
+				fileLength -= pixelBytes;
+			}
+			target[0] = source[2];
+			target[1] = source[1];
+			target[2] = source[0];
+			target[3] = (pixelBytes == 4) ? source[3] : 255;
+		}
+		pixel += runLength;
+	}
+	handle = XboxNV2A_RegisterTexture(path, (int)width, (int)height, rgba);
+tga_done:
+	free(rgba);
+	xboxRefImport.FS_FreeFile(fileBuffer);
+	return handle;
+}
 
 static void XboxRefShutdown(qboolean destroyWindow)
 {
@@ -16,12 +124,6 @@ static void XboxRefShutdown(qboolean destroyWindow)
 static void XboxRefBeginRegistration(glconfig_t *config)
 {
 	XboxNV2A_BeginRegistration(config);
-}
-
-static qhandle_t XboxRefRegisterShader(const char *name)
-{
-	(void)name;
-	return xboxRefNextShader++;
 }
 
 static qhandle_t XboxRefRegisterModel(const char *name)
@@ -101,8 +203,12 @@ static int XboxRefMarkFragments(int numPoints, const vec3_t *points,
 static int XboxRefLerpTag(orientation_t *tag, qhandle_t model, int start,
 	int end, float frac, const char *tagName)
 {
-	(void)tag; (void)model; (void)start; (void)end; (void)frac; (void)tagName;
-	return -1;
+	(void)model; (void)start; (void)end; (void)frac; (void)tagName;
+	if (tag) {
+		VectorClear(tag->origin);
+		AxisClear(tag->axis);
+	}
+	return qfalse;
 }
 static void XboxRefModelBounds(qhandle_t model, vec3_t mins, vec3_t maxs)
 {
@@ -136,6 +242,7 @@ refexport_t *GetRefAPI(int apiVersion, refimport_t *rimp)
 {
 	if (apiVersion != REF_API_VERSION || !rimp)
 		return NULL;
+	xboxRefImport = *rimp;
 	if (!XboxNV2A_Init())
 		return NULL;
 

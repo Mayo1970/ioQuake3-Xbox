@@ -1,11 +1,13 @@
 struct vIn {
 	float4 color    : DIFFUSE;
 	float4 position : POSITION;
+	float2 texcoord : TEXCOORD0;
 };
 
 struct vOut {
 	float4 col : COLOR;
 	float4 pos : POSITION;
+	float2 texcoord : TEXCOORD0;
 };
 
 vOut main(
@@ -20,6 +22,7 @@ vOut main(
 	position.xyz = position.xyz / position.w;
 
 	result.col = I.color;
+	result.texcoord = I.texcoord;
 	result.pos = position;
 	return result;
 }

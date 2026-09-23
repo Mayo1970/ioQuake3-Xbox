@@ -1,10 +1,4 @@
-/*
-===========================================================================
-Copyright (C) 1999-2005 Id Software, Inc.
-
-This file is part of Quake III Arena source code.
-===========================================================================
-*/
+/* Copyright (C) 1999-2005 Id Software, Inc. Part of Quake III Arena source code. */
 
 #ifndef IOQUAKE3_SYS_XBOX_H
 #define IOQUAKE3_SYS_XBOX_H

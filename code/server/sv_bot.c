@@ -523,7 +523,9 @@ void SV_BotInitBotLib(void) {
 	botlib_import_t	botlib_import;
 
 #ifdef XBOX
-	/* The engine shell does not ship the optional botlib VM yet. */
+	/* Botlib is not built; qagame would call through a NULL botlib_export. */
+	Cvar_Get("bot_enable", "0", CVAR_ROM);
+	Cvar_Set("bot_enable", "0");
 	botlib_export = NULL;
 	return;
 #endif

@@ -1,5 +1,5 @@
-/src/code/sys/xbox_boot.obj: /src/code/sys/xbox_boot.c \
-  /src/code/sys/sys_xbox.h /usr/src/nxdk/lib/pdclib/include/stdio.h \
+/work/code/sys/xbox_boot.obj: /work/code/sys/xbox_boot.c \
+  /work/code/sys/sys_xbox.h /usr/src/nxdk/lib/pdclib/include/stdio.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_lib_ext1.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_int.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/pdclib/_PDCLIB_config.h \
@@ -10,7 +10,7 @@
   /usr/src/nxdk/lib/xboxrt/libc_extensions/stdlib_ext_.h \
   /usr/src/nxdk/lib/xboxrt/libc_extensions/string_ext_.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
-  /src/code/sys/../qcommon/q_shared.h \
+  /work/code/sys/../qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
   /usr/src/nxdk/lib/pdclib/include/stdarg.h \
@@ -24,15 +24,15 @@
   /usr/src/nxdk/lib/pdclib/include/time.h \
   /usr/src/nxdk/lib/pdclib/include/ctype.h \
   /usr/src/nxdk/lib/pdclib/include/limits.h \
-  /src/code/sys/../qcommon/q_platform.h \
-  /src/code/sys/../qcommon/surfaceflags.h \
-  /src/code/sys/../qcommon/qcommon.h \
-  /src/code/sys/../qcommon/../qcommon/cm_public.h \
-  /src/code/sys/../qcommon/../qcommon/qfiles.h \
+  /work/code/sys/../qcommon/q_platform.h \
+  /work/code/sys/../qcommon/surfaceflags.h \
+  /work/code/sys/../qcommon/qcommon.h \
+  /work/code/sys/../qcommon/../qcommon/cm_public.h \
+  /work/code/sys/../qcommon/../qcommon/qfiles.h \
   /usr/src/nxdk/lib/hal/video.h /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h \
   /usr/src/nxdk/lib/xboxkrnl/xboxdef.h \
   /usr/src/nxdk/lib/xboxkrnl/ntstatus.h
-/src/code/sys/sys_xbox.h:
+/work/code/sys/sys_xbox.h:
 /usr/src/nxdk/lib/pdclib/include/stdio.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_lib_ext1.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_int.h:
@@ -44,7 +44,7 @@
 /usr/src/nxdk/lib/xboxrt/libc_extensions/stdlib_ext_.h:
 /usr/src/nxdk/lib/xboxrt/libc_extensions/string_ext_.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
-/src/code/sys/../qcommon/q_shared.h:
+/work/code/sys/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
 /usr/src/nxdk/lib/pdclib/include/stdarg.h:
@@ -58,11 +58,11 @@
 /usr/src/nxdk/lib/pdclib/include/time.h:
 /usr/src/nxdk/lib/pdclib/include/ctype.h:
 /usr/src/nxdk/lib/pdclib/include/limits.h:
-/src/code/sys/../qcommon/q_platform.h:
-/src/code/sys/../qcommon/surfaceflags.h:
-/src/code/sys/../qcommon/qcommon.h:
-/src/code/sys/../qcommon/../qcommon/cm_public.h:
-/src/code/sys/../qcommon/../qcommon/qfiles.h:
+/work/code/sys/../qcommon/q_platform.h:
+/work/code/sys/../qcommon/surfaceflags.h:
+/work/code/sys/../qcommon/qcommon.h:
+/work/code/sys/../qcommon/../qcommon/cm_public.h:
+/work/code/sys/../qcommon/../qcommon/qfiles.h:
 /usr/src/nxdk/lib/hal/video.h:
 /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h:
 /usr/src/nxdk/lib/xboxkrnl/xboxdef.h:

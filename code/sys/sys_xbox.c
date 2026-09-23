@@ -1,15 +1,10 @@
-/*
-===========================================================================
-Copyright (C) 1999-2005 Id Software, Inc.
-
-This file is part of Quake III Arena source code.
-===========================================================================
-*/
+/* Copyright (C) 1999-2005 Id Software, Inc. Part of Quake III Arena source code. */
 
 #include "sys_xbox.h"
 
 #include "../qcommon/q_shared.h"
 #include "../qcommon/qcommon.h"
+#include "../renderernv2a/xbox_nv2a.h"
 
 #include <hal/debug.h>
 #include <xboxkrnl/xboxkrnl.h>
@@ -21,8 +16,12 @@ This file is part of Quake III Arena source code.
 #include <string.h>
 #include <fileapi.h>
 
+#define XBOX_LOG_FLUSH_MSEC 250
+#define XBOX_FATAL_DISPLAY_MSEC 10000
+
 static volatile int xboxExitRequested;
 static FILE *xboxLogFile;
+static DWORD xboxLogLastFlush;
 static int xboxTimeBase;
 static char xboxBinaryPath[MAX_OSPATH];
 static char xboxHomePath[MAX_OSPATH];
@@ -57,11 +56,19 @@ void Sys_XboxLog(const char *format, ...)
 	vsnprintf(message, sizeof(message), format, args);
 	va_end(args);
 
-	debugPrint("%s", message);
+	/* debugPrint targets the hidden kernel framebuffer while pbkit owns the screen. */
+	if (!XboxNV2A_OwnsScreen())
+		debugPrint("%s", message);
 	if (xboxLogFile)
 	{
+		DWORD now = GetTickCount();
+
 		fputs(message, xboxLogFile);
-		fflush(xboxLogFile);
+		if (!XboxNV2A_OwnsScreen() || now - xboxLogLastFlush >= XBOX_LOG_FLUSH_MSEC)
+		{
+			fflush(xboxLogFile);
+			xboxLogLastFlush = now;
+		}
 	}
 }
 
@@ -205,11 +212,8 @@ qboolean Sys_Mkdir(const char *path)
 	if (CreateDirectoryA(normalized, NULL))
 		return qtrue;
 
-	/*
-	 * FATX/nxdk can report a stale or non-standard last-error value when the
-	 * directory already exists.  Query the object directly before treating the
-	 * create as a failure; FS_CreatePath calls us for every parent component.
-	 */
+	/* FATX/nxdk can report a stale last-error when the directory exists; */
+	/* query it directly, since FS_CreatePath calls us for every parent. */
 	error = GetLastError();
 	attributes = GetFileAttributesA(normalized);
 	if (attributes != INVALID_FILE_ATTRIBUTES &&
@@ -423,12 +427,8 @@ const char *Sys_XboxHomePath(void)
 	{
 		DWORD attributes;
 
-		/*
-		 * The normal Xbox layout keeps mutable data on E:.  Some launchers and
-		 * test images do not mount E:, however, while D:\baseq3 already exists
-		 * because it contains the shipped game data.  Make the game directory
-		 * first so FS_CreatePath can later create files below it.
-		 */
+		/* Mutable data belongs on E:, but some launchers do not mount it; */
+		/* fall back to D:\baseq3, which already holds the shipped game data. */
 		if (CreateDirectoryA("E:\\baseq3", NULL))
 		{
 			Q_strncpyz(xboxHomePath, "E:", sizeof(xboxHomePath));
@@ -493,17 +493,21 @@ void Sys_Error(const char *format, ...)
 	vsnprintf(message, sizeof(message), format, args);
 	va_end(args);
 
+	XboxNV2A_ShowDebugScreen();
 	Sys_XboxLog("FATAL: %s\n", message);
-	Sys_XboxRequestExit();
-	for (;;)
-		Sleep(1000);
+	Sys_XboxLog("Returning to the dashboard in %d seconds.\n",
+		XBOX_FATAL_DISPLAY_MSEC / 1000);
+	Sleep(XBOX_FATAL_DISPLAY_MSEC);
+	XboxNV2A_Kill();
+	Sys_XboxPlatformShutdown();
+	exit(1);
 }
 
 void Sys_Quit(void)
 {
-	Sys_XboxRequestExit();
-	for (;;)
-		Sleep(1000);
+	XboxNV2A_Kill();
+	Sys_XboxPlatformShutdown();
+	exit(0);
 }
 
 void Sys_XboxSleep(unsigned int milliseconds)

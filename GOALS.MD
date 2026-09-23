@@ -148,13 +148,23 @@ Status: **not started — primary risk**
 Create a new native renderer backend, provisionally `code/renderernv2a/`, using
 nxdk's native Xbox graphics facilities such as pbkit/xgu. [HIGH]
 
+Use the UT99 Xbox replacement platform as the architectural reference and
+selectively as the low-level backend base. Reuse its proven separation of
+Xbox startup/platform services, viewport/input handling, render-state caching,
+texture caching, dynamic vertex buffering, and frame presentation. Adapt those
+pieces to ioquake3's renderer interfaces; do not import Unreal's
+`URenderDevice`/scene lifecycle or its incompatible build/runtime dependencies.
+The Quake III renderer remains the owner of shader stages, tessellation, world
+surfaces, lightmaps, models, and draw ordering. [HIGH]
+
 Bring it up in this order:
 
 1. Video mode, framebuffer, clear, present, and a solid-color triangle. [MEDIUM]
 2. 2D stretch blits, console text, screenshots/diagnostics, and scissor state.
    [MEDIUM]
 3. Indexed textured triangles with nearest/linear filtering and texture upload.
-   [MEDIUM]
+   Use RGBA4444 as the default Xbox texture representation; RGBA8888 is not the
+   default path. [HIGH]
 4. Quake 3 world surfaces, lightmaps, fog, sky, and batching. [LOW]
 5. Alias/MD3 models, sprites, particles, marks, dynamic lights, and UI.
    [LOW]

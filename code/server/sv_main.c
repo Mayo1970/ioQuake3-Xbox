@@ -361,7 +361,11 @@ CONNECTIONLESS COMMANDS
 */
 
 // This is deliberately quite large to make it more of an effort to DoS
+#ifdef XBOX
+#define MAX_BUCKETS			1024
+#else
 #define MAX_BUCKETS			16384
+#endif
 #define MAX_HASHES			1024
 
 static leakyBucket_t buckets[ MAX_BUCKETS ];

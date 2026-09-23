@@ -40,8 +40,8 @@ int demo_protocols[] =
 #ifdef XBOX
 /* The original Xbox has 64 MiB shared between the title and the OS.  The
  * desktop defaults (128 MiB hunk + 48 MiB zone) cannot fit in that pool. */
-#define DEF_COMHUNKMEGS 	16
-#define MIN_COMHUNKMEGS		16
+#define DEF_COMHUNKMEGS 	24
+#define MIN_COMHUNKMEGS		24
 #define DEF_COMZONEMEGS		8
 #else
 #define DEF_COMHUNKMEGS 	128
@@ -2463,7 +2463,11 @@ void Com_GameRestart_f(void)
 // TTimo: centralizing the cl_cdkey stuff after I discovered a buffer overflow problem with the dedicated server version
 //   not sure it's necessary to have different defaults for regular and dedicated, but I don't want to risk it
 //   https://zerowing.idsoftware.com/bugzilla/show_bug.cgi?id=470
-#ifndef DEDICATED
+#if defined(IOQUAKE3_XBOX) && !defined(DEDICATED) && !defined(STANDALONE)
+// static seed so trap_VerifyCDKey passes and the q3_ui CDKey entry
+// screen is skipped on first boot (Xbox has no keyboard for key entry)
+char	cl_cdkey[34] = "wj7cplhs2gp3ac3a";
+#elif !defined(DEDICATED)
 char	cl_cdkey[34] = "                                ";
 #else
 char	cl_cdkey[34] = "123456789";
@@ -2484,7 +2488,11 @@ void Com_ReadCDKey( const char *filename ) {
 
 	FS_BaseDir_FOpenFileRead( fbuffer, &f );
 	if ( !f ) {
+#if defined(IOQUAKE3_XBOX) && !defined(DEDICATED) && !defined(STANDALONE)
+		/* Keep the static cl_cdkey seed -- see note above. */
+#else
 		Com_Memset( cl_cdkey, '\0', 17 );
+#endif
 		return;
 	}
 
@@ -2498,7 +2506,11 @@ void Com_ReadCDKey( const char *filename ) {
 	if (CL_CDKeyValidate(buffer, NULL)) {
 		Q_strncpyz( cl_cdkey, buffer, 17 );
 	} else {
+#if defined(IOQUAKE3_XBOX) && !defined(DEDICATED) && !defined(STANDALONE)
+		/* Keep the static cl_cdkey seed -- see note above. */
+#else
 		Com_Memset( cl_cdkey, '\0', 17 );
+#endif
 	}
 }
 

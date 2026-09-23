@@ -460,6 +460,11 @@ int Q_isnan(float x);
   extern long (QDECL *Q_ftol)(float f);
   extern int (QDECL *Q_VMftol)(void);
   extern void (QDECL *Q_SnapVector)(vec3_t vec);
+#elif defined(XBOX)
+  // nxdk's lrintf is an assert(0) stub; truncate with SSE1 like the x86 build.
+  extern long qftolsse(float f);
+  #define Q_ftol qftolsse
+  #define Q_SnapVector(vec)	do	{		vec3_t *temp = (vec);				(*temp)[0] = round((*temp)[0]);		(*temp)[1] = round((*temp)[1]);		(*temp)[2] = round((*temp)[2]);	} while(0)
 #else
   // Q_ftol must expand to a function name so the pluggable renderer can take
   // its address
@@ -1406,7 +1411,11 @@ typedef enum _flag_status {
 
 
 
+#ifdef XBOX
+#define	MAX_GLOBAL_SERVERS				256
+#else
 #define	MAX_GLOBAL_SERVERS				4096
+#endif
 #define	MAX_OTHER_SERVERS					128
 #define MAX_PINGREQUESTS					32
 #define MAX_SERVERSTATUSREQUESTS	16
