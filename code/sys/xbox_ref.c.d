@@ -30,6 +30,7 @@
   /src/code/sys/../renderercommon/tr_types.h \
   /src/code/sys/../renderernv2a/xbox_nv2a.h \
   /src/code/sys/../renderernv2a/../qcommon/q_shared.h \
+  /src/code/sys/../renderernv2a/../qcommon/qfiles.h \
   /src/code/sys/../renderernv2a/../renderercommon/tr_public.h
 /src/code/sys/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
@@ -62,4 +63,5 @@
 /src/code/sys/../renderercommon/tr_types.h:
 /src/code/sys/../renderernv2a/xbox_nv2a.h:
 /src/code/sys/../renderernv2a/../qcommon/q_shared.h:
+/src/code/sys/../renderernv2a/../qcommon/qfiles.h:
 /src/code/sys/../renderernv2a/../renderercommon/tr_public.h:

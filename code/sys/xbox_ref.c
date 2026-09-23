@@ -48,8 +48,7 @@ static void XboxRefBeginRegistration(glconfig_t *config)
 
 static qhandle_t XboxRefRegisterModel(const char *name)
 {
-	(void)name;
-	return 0;
+	return XboxNV2AModel_Register(name);
 }
 
 static qhandle_t XboxRefRegisterSkin(const char *name)
@@ -61,8 +60,14 @@ static qhandle_t XboxRefRegisterSkin(const char *name)
 static void XboxRefNoop(void) {}
 static void XboxRefLoadWorld(const char *name) { (void)name; }
 static void XboxRefSetWorldVisData(const byte *vis) { (void)vis; }
-static void XboxRefClearScene(void) {}
-static void XboxRefAddRefEntity(const refEntity_t *entity) { (void)entity; }
+static void XboxRefClearScene(void)
+{
+	XboxNV2A_ClearScene();
+}
+static void XboxRefAddRefEntity(const refEntity_t *entity)
+{
+	XboxNV2A_AddRefEntity(entity);
+}
 static void XboxRefAddPoly(qhandle_t shader, int numVerts,
 	const polyVert_t *verts, int num)
 {
@@ -82,7 +87,10 @@ static void XboxRefAddLight(const vec3_t org, float intensity,
 {
 	(void)org; (void)intensity; (void)r; (void)g; (void)b;
 }
-static void XboxRefRenderScene(const refdef_t *fd) { (void)fd; }
+static void XboxRefRenderScene(const refdef_t *fd)
+{
+	XboxNV2A_RenderScene(fd);
+}
 static void XboxRefSetColor(const float *rgba)
 {
 	XboxNV2A_SetColor(rgba);
@@ -123,16 +131,11 @@ static int XboxRefMarkFragments(int numPoints, const vec3_t *points,
 static int XboxRefLerpTag(orientation_t *tag, qhandle_t model, int start,
 	int end, float frac, const char *tagName)
 {
-	(void)model; (void)start; (void)end; (void)frac; (void)tagName;
-	if (tag) {
-		VectorClear(tag->origin);
-		AxisClear(tag->axis);
-	}
-	return qfalse;
+	return XboxNV2AModel_LerpTag(tag, model, start, end, frac, tagName);
 }
 static void XboxRefModelBounds(qhandle_t model, vec3_t mins, vec3_t maxs)
 {
-	(void)model; VectorClear(mins); VectorClear(maxs);
+	XboxNV2AModel_Bounds(model, mins, maxs);
 }
 static void XboxRefRegisterFont(const char *name, int size, fontInfo_t *font)
 {

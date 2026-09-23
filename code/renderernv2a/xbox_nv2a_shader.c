@@ -1,4 +1,4 @@
-/* Q3 shader scripts and TGA/JPG images for the NV2A 2D path. */
+/* Q3 shader scripts and TGA/JPG images for the NV2A renderer. */
 #include "xbox_nv2a.h"
 #include "../renderercommon/tr_common.h"
 #include "../sys/sys_xbox.h"
@@ -283,17 +283,165 @@ static unsigned int XboxShaderBlendFactor(const char *name)
 	return GL_ONE;
 }
 
-/* Reads one stage up to its closing brace; qtrue if it names a loadable image. */
-static qboolean XboxShaderParseStage(char **text, xboxNV2AShaderState_t *state)
+static int XboxShaderWaveFunc(const char *name)
 {
-	char mapName[MAX_QPATH] = "";
-	xboxNV2AShaderState_t stage;
+	if (!Q_stricmp(name, "square"))
+		return XBOX_NV2A_WAVE_SQUARE;
+	if (!Q_stricmp(name, "triangle"))
+		return XBOX_NV2A_WAVE_TRIANGLE;
+	if (!Q_stricmp(name, "sawtooth"))
+		return XBOX_NV2A_WAVE_SAWTOOTH;
+	if (!Q_stricmp(name, "inversesawtooth"))
+		return XBOX_NV2A_WAVE_INVERSE_SAWTOOTH;
+	if (!Q_stricmp(name, "noise"))
+		return XBOX_NV2A_WAVE_NOISE;
+	return XBOX_NV2A_WAVE_SIN;
+}
+
+/* Reads "func base amplitude phase frequency" from the current line. */
+static void XboxShaderParseWave(char **text, xboxNV2AWave_t *wave)
+{
+	wave->func = XboxShaderWaveFunc(COM_ParseExt(text, qfalse));
+	wave->base = atof(COM_ParseExt(text, qfalse));
+	wave->amplitude = atof(COM_ParseExt(text, qfalse));
+	wave->phase = atof(COM_ParseExt(text, qfalse));
+	wave->frequency = atof(COM_ParseExt(text, qfalse));
+}
+
+/* Reads "( a b c )" as in ioq3 Parse1DMatrix. */
+static void XboxShaderParseVector(char **text, int count, float *out)
+{
+	int i;
+
+	if (strcmp(COM_ParseExt(text, qfalse), "("))
+		return;
+	for (i = 0; i < count; ++i)
+		out[i] = atof(COM_ParseExt(text, qfalse));
+	COM_ParseExt(text, qfalse);
+}
+
+static void XboxShaderParseTexMod(char **text, xboxNV2AStage_t *stage)
+{
+	xboxNV2ATexMod_t *mod;
 	char *token;
 
-	memset(&stage, 0, sizeof(stage));
-	stage.srcBlend = GL_ONE;
-	stage.dstBlend = GL_ZERO;
-	stage.alphaFunc = XBOX_NV2A_ALPHA_NONE;
+	if (stage->numTexMods == XBOX_NV2A_MAX_TEXMODS)
+		return;
+	mod = &stage->texMods[stage->numTexMods];
+	memset(mod, 0, sizeof(*mod));
+	token = COM_ParseExt(text, qfalse);
+	if (!Q_stricmp(token, "turb")) {
+		mod->type = XBOX_NV2A_TCMOD_TURB;
+		mod->wave.base = atof(COM_ParseExt(text, qfalse));
+		mod->wave.amplitude = atof(COM_ParseExt(text, qfalse));
+		mod->wave.phase = atof(COM_ParseExt(text, qfalse));
+		mod->wave.frequency = atof(COM_ParseExt(text, qfalse));
+	} else if (!Q_stricmp(token, "scale")) {
+		mod->type = XBOX_NV2A_TCMOD_SCALE;
+		mod->scale[0] = atof(COM_ParseExt(text, qfalse));
+		mod->scale[1] = atof(COM_ParseExt(text, qfalse));
+	} else if (!Q_stricmp(token, "scroll")) {
+		mod->type = XBOX_NV2A_TCMOD_SCROLL;
+		mod->scroll[0] = atof(COM_ParseExt(text, qfalse));
+		mod->scroll[1] = atof(COM_ParseExt(text, qfalse));
+	} else if (!Q_stricmp(token, "stretch")) {
+		mod->type = XBOX_NV2A_TCMOD_STRETCH;
+		XboxShaderParseWave(text, &mod->wave);
+	} else if (!Q_stricmp(token, "transform")) {
+		mod->type = XBOX_NV2A_TCMOD_TRANSFORM;
+		mod->matrix[0][0] = atof(COM_ParseExt(text, qfalse));
+		mod->matrix[0][1] = atof(COM_ParseExt(text, qfalse));
+		mod->matrix[1][0] = atof(COM_ParseExt(text, qfalse));
+		mod->matrix[1][1] = atof(COM_ParseExt(text, qfalse));
+		mod->translate[0] = atof(COM_ParseExt(text, qfalse));
+		mod->translate[1] = atof(COM_ParseExt(text, qfalse));
+	} else if (!Q_stricmp(token, "rotate")) {
+		mod->type = XBOX_NV2A_TCMOD_ROTATE;
+		mod->rotateSpeed = atof(COM_ParseExt(text, qfalse));
+	} else if (!Q_stricmp(token, "entityTranslate")) {
+		mod->type = XBOX_NV2A_TCMOD_ENTITY_TRANSLATE;
+	} else {
+		if (token[0])
+			SkipRestOfLine(text);
+		return;
+	}
+	stage->numTexMods++;
+}
+
+static void XboxShaderParseRgbGen(char **text, xboxNV2AStage_t *stage)
+{
+	char *token = COM_ParseExt(text, qfalse);
+
+	if (!Q_stricmp(token, "wave")) {
+		stage->rgbGen = XBOX_NV2A_RGBGEN_WAVE;
+		XboxShaderParseWave(text, &stage->rgbWave);
+	} else if (!Q_stricmp(token, "const")) {
+		float color[3] = {0.0f, 0.0f, 0.0f};
+
+		stage->rgbGen = XBOX_NV2A_RGBGEN_CONST;
+		XboxShaderParseVector(text, 3, color);
+		stage->constant[0] = (byte)(255 * Com_Clamp(0.0f, 1.0f, color[0]));
+		stage->constant[1] = (byte)(255 * Com_Clamp(0.0f, 1.0f, color[1]));
+		stage->constant[2] = (byte)(255 * Com_Clamp(0.0f, 1.0f, color[2]));
+	} else if (!Q_stricmp(token, "identity")) {
+		stage->rgbGen = XBOX_NV2A_RGBGEN_IDENTITY;
+	} else if (!Q_stricmp(token, "identityLighting")) {
+		stage->rgbGen = XBOX_NV2A_RGBGEN_IDENTITY_LIGHTING;
+	} else if (!Q_stricmp(token, "entity")) {
+		stage->rgbGen = XBOX_NV2A_RGBGEN_ENTITY;
+	} else if (!Q_stricmp(token, "oneMinusEntity")) {
+		stage->rgbGen = XBOX_NV2A_RGBGEN_ONE_MINUS_ENTITY;
+	} else if (!Q_stricmp(token, "vertex")) {
+		stage->rgbGen = XBOX_NV2A_RGBGEN_VERTEX;
+	} else if (!Q_stricmp(token, "exactVertex")) {
+		stage->rgbGen = XBOX_NV2A_RGBGEN_EXACT_VERTEX;
+	} else if (!Q_stricmp(token, "lightingDiffuse")) {
+		stage->rgbGen = XBOX_NV2A_RGBGEN_LIGHTING_DIFFUSE;
+	} else if (!Q_stricmp(token, "oneMinusVertex")) {
+		stage->rgbGen = XBOX_NV2A_RGBGEN_ONE_MINUS_VERTEX;
+	}
+}
+
+/* lightingSpecular and portal need world data, so they fall back to identity. */
+static void XboxShaderParseAlphaGen(char **text, xboxNV2AStage_t *stage)
+{
+	char *token = COM_ParseExt(text, qfalse);
+
+	if (!Q_stricmp(token, "wave")) {
+		stage->alphaGen = XBOX_NV2A_ALPHAGEN_WAVE;
+		XboxShaderParseWave(text, &stage->alphaWave);
+	} else if (!Q_stricmp(token, "const")) {
+		stage->alphaGen = XBOX_NV2A_ALPHAGEN_CONST;
+		stage->constant[3] = (byte)(255 * Com_Clamp(0.0f, 1.0f,
+			atof(COM_ParseExt(text, qfalse))));
+	} else if (!Q_stricmp(token, "entity")) {
+		stage->alphaGen = XBOX_NV2A_ALPHAGEN_ENTITY;
+	} else if (!Q_stricmp(token, "oneMinusEntity")) {
+		stage->alphaGen = XBOX_NV2A_ALPHAGEN_ONE_MINUS_ENTITY;
+	} else if (!Q_stricmp(token, "vertex")) {
+		stage->alphaGen = XBOX_NV2A_ALPHAGEN_VERTEX;
+	} else if (!Q_stricmp(token, "oneMinusVertex")) {
+		stage->alphaGen = XBOX_NV2A_ALPHAGEN_ONE_MINUS_VERTEX;
+	} else {
+		stage->alphaGen = XBOX_NV2A_ALPHAGEN_IDENTITY;
+	}
+}
+
+/* Reads one stage up to its closing brace; qfalse if it cannot be drawn without world data. */
+static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage)
+{
+	char maps[XBOX_NV2A_MAX_ANIM_IMAGES][MAX_QPATH];
+	int numMaps = 0;
+	qboolean drawable = qtrue;
+	qboolean depthWriteSet = qfalse;
+	char *token;
+	int i;
+
+	memset(stage, 0, sizeof(*stage));
+	stage->srcBlend = GL_ONE;
+	stage->dstBlend = GL_ZERO;
+	stage->depthWrite = qtrue;
+	stage->alphaFunc = XBOX_NV2A_ALPHA_NONE;
 	for (;;) {
 		token = COM_ParseExt(text, qtrue);
 		if (!token[0])
@@ -301,67 +449,118 @@ static qboolean XboxShaderParseStage(char **text, xboxNV2AShaderState_t *state)
 		if (!strcmp(token, "}"))
 			break;
 		if (!Q_stricmp(token, "map") || !Q_stricmp(token, "clampmap")) {
-			stage.clamp = !Q_stricmp(token, "clampmap");
+			stage->clamp = !Q_stricmp(token, "clampmap");
 			token = COM_ParseExt(text, qfalse);
-			/* $lightmap needs world data; the 2D path cannot use it. */
-			if (Q_stricmp(token, "$lightmap"))
-				Q_strncpyz(mapName, token, sizeof(mapName));
+			if (!Q_stricmp(token, "$lightmap")) {
+				drawable = qfalse;
+			} else {
+				Q_strncpyz(maps[0], token, sizeof(maps[0]));
+				numMaps = 1;
+			}
 		} else if (!Q_stricmp(token, "animMap")) {
+			stage->animFrequency = atof(COM_ParseExt(text, qfalse));
+			numMaps = 0;
+			for (token = COM_ParseExt(text, qfalse); token[0];
+				token = COM_ParseExt(text, qfalse)) {
+				if (numMaps < XBOX_NV2A_MAX_ANIM_IMAGES)
+					Q_strncpyz(maps[numMaps++], token, sizeof(maps[0]));
+			}
+		} else if (!Q_stricmp(token, "videoMap")) {
+			drawable = qfalse;
 			COM_ParseExt(text, qfalse);
-			token = COM_ParseExt(text, qfalse);
-			Q_strncpyz(mapName, token, sizeof(mapName));
-			SkipRestOfLine(text);
 		} else if (!Q_stricmp(token, "blendFunc")) {
 			token = COM_ParseExt(text, qfalse);
 			if (!Q_stricmp(token, "add")) {
-				stage.srcBlend = GL_ONE;
-				stage.dstBlend = GL_ONE;
+				stage->srcBlend = GL_ONE;
+				stage->dstBlend = GL_ONE;
 			} else if (!Q_stricmp(token, "filter")) {
-				stage.srcBlend = GL_DST_COLOR;
-				stage.dstBlend = GL_ZERO;
+				stage->srcBlend = GL_DST_COLOR;
+				stage->dstBlend = GL_ZERO;
 			} else if (!Q_stricmp(token, "blend")) {
-				stage.srcBlend = GL_SRC_ALPHA;
-				stage.dstBlend = GL_ONE_MINUS_SRC_ALPHA;
+				stage->srcBlend = GL_SRC_ALPHA;
+				stage->dstBlend = GL_ONE_MINUS_SRC_ALPHA;
 			} else {
-				stage.srcBlend = XboxShaderBlendFactor(token);
-				token = COM_ParseExt(text, qfalse);
-				stage.dstBlend = XboxShaderBlendFactor(token);
+				stage->srcBlend = XboxShaderBlendFactor(token);
+				stage->dstBlend = XboxShaderBlendFactor(COM_ParseExt(text, qfalse));
 			}
+			/* ioq3 clears the depth mask for blended stages. */
+			if (!depthWriteSet)
+				stage->depthWrite = qfalse;
 		} else if (!Q_stricmp(token, "alphaFunc")) {
 			token = COM_ParseExt(text, qfalse);
 			if (!Q_stricmp(token, "GT0"))
-				stage.alphaFunc = XBOX_NV2A_ALPHA_GT0;
+				stage->alphaFunc = XBOX_NV2A_ALPHA_GT0;
 			else if (!Q_stricmp(token, "LT128"))
-				stage.alphaFunc = XBOX_NV2A_ALPHA_LT128;
+				stage->alphaFunc = XBOX_NV2A_ALPHA_LT128;
 			else if (!Q_stricmp(token, "GE128"))
-				stage.alphaFunc = XBOX_NV2A_ALPHA_GE128;
+				stage->alphaFunc = XBOX_NV2A_ALPHA_GE128;
+		} else if (!Q_stricmp(token, "depthFunc")) {
+			stage->depthEqual = !Q_stricmp(COM_ParseExt(text, qfalse), "equal");
+		} else if (!Q_stricmp(token, "depthWrite")) {
+			stage->depthWrite = qtrue;
+			depthWriteSet = qtrue;
 		} else if (!Q_stricmp(token, "rgbGen")) {
-			token = COM_ParseExt(text, qfalse);
-			stage.vertexColor = !Q_stricmp(token, "vertex") ||
-				!Q_stricmp(token, "exactVertex");
-			SkipRestOfLine(text);
+			XboxShaderParseRgbGen(text, stage);
 		} else if (!Q_stricmp(token, "alphaGen")) {
+			XboxShaderParseAlphaGen(text, stage);
+		} else if (!Q_stricmp(token, "tcGen") || !Q_stricmp(token, "texGen")) {
 			token = COM_ParseExt(text, qfalse);
-			stage.vertexAlpha = !Q_stricmp(token, "vertex");
-			SkipRestOfLine(text);
+			if (!Q_stricmp(token, "environment")) {
+				stage->tcGen = XBOX_NV2A_TCGEN_ENVIRONMENT;
+			} else if (!Q_stricmp(token, "vector")) {
+				stage->tcGen = XBOX_NV2A_TCGEN_VECTOR;
+				XboxShaderParseVector(text, 3, stage->tcGenVectors[0]);
+				XboxShaderParseVector(text, 3, stage->tcGenVectors[1]);
+			}
+		} else if (!Q_stricmp(token, "tcMod")) {
+			XboxShaderParseTexMod(text, stage);
 		} else {
+			/* Known keywords consume exact tokens; a skip after an empty token would eat a line. */
 			SkipRestOfLine(text);
 		}
 	}
-	if (!mapName[0])
+	/* ioq3: GL_ONE GL_ZERO disables blending and writes depth. */
+	if (stage->srcBlend == GL_ONE && stage->dstBlend == GL_ZERO)
+		stage->depthWrite = qtrue;
+	if (!drawable || !numMaps)
 		return qfalse;
-	stage.image = XboxShaderLoadImage(mapName);
-	if (!stage.image)
-		return qfalse;
-	*state = stage;
-	return qtrue;
+	for (i = 0; i < numMaps; ++i) {
+		int image = XboxShaderLoadImage(maps[i]);
+
+		if (image)
+			stage->images[stage->numImages++] = image;
+	}
+	return stage->numImages > 0;
 }
 
-/* The 2D path draws one layer: the first stage whose image loads. */
-static void XboxShaderParse(char *body, xboxNV2AShaderState_t *state)
+static float XboxShaderParseSort(const char *token)
+{
+	if (!Q_stricmp(token, "portal"))
+		return XBOX_NV2A_SORT_PORTAL;
+	if (!Q_stricmp(token, "sky"))
+		return XBOX_NV2A_SORT_ENVIRONMENT;
+	if (!Q_stricmp(token, "opaque"))
+		return XBOX_NV2A_SORT_OPAQUE;
+	if (!Q_stricmp(token, "decal"))
+		return XBOX_NV2A_SORT_DECAL;
+	if (!Q_stricmp(token, "seeThrough"))
+		return XBOX_NV2A_SORT_SEE_THROUGH;
+	if (!Q_stricmp(token, "banner"))
+		return XBOX_NV2A_SORT_BANNER;
+	if (!Q_stricmp(token, "additive"))
+		return XBOX_NV2A_SORT_BLEND1;
+	if (!Q_stricmp(token, "nearest"))
+		return XBOX_NV2A_SORT_NEAREST;
+	if (!Q_stricmp(token, "underwater"))
+		return XBOX_NV2A_SORT_UNDERWATER;
+	return atof(token);
+}
+
+static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def)
 {
 	char *p = body;
-	qboolean haveStage = qfalse;
+	qboolean sortSet = qfalse;
+	qboolean polygonOffset = qfalse;
 	char *token;
 
 	for (;;) {
@@ -369,22 +568,83 @@ static void XboxShaderParse(char *body, xboxNV2AShaderState_t *state)
 		if (!token[0] || !strcmp(token, "}"))
 			break;
 		if (!strcmp(token, "{")) {
-			if (haveStage) {
-				if (!SkipBracedSection(&p, 1))
-					break;
-			} else {
-				haveStage = XboxShaderParseStage(&p, state);
+			if (def->numStages < XBOX_NV2A_MAX_STAGES) {
+				if (XboxShaderParseStage(&p, &def->stages[def->numStages]))
+					def->numStages++;
+			} else if (!SkipBracedSection(&p, 1)) {
+				break;
 			}
 			continue;
 		}
-		SkipRestOfLine(&p);
+		if (!Q_stricmp(token, "cull")) {
+			token = COM_ParseExt(&p, qfalse);
+			if (!Q_stricmp(token, "none") || !Q_stricmp(token, "twosided") ||
+				!Q_stricmp(token, "disable"))
+				def->cull = XBOX_NV2A_CULL_NONE;
+			else if (!Q_stricmp(token, "back") || !Q_stricmp(token, "backside") ||
+				!Q_stricmp(token, "backsided"))
+				def->cull = XBOX_NV2A_CULL_BACK;
+			else
+				def->cull = XBOX_NV2A_CULL_FRONT;
+		} else if (!Q_stricmp(token, "sort")) {
+			def->sort = XboxShaderParseSort(COM_ParseExt(&p, qfalse));
+			sortSet = qtrue;
+		} else if (!Q_stricmp(token, "portal")) {
+			def->sort = XBOX_NV2A_SORT_PORTAL;
+			sortSet = qtrue;
+		} else if (!Q_stricmp(token, "polygonOffset")) {
+			polygonOffset = qtrue;
+		} else {
+			SkipRestOfLine(&p);
+		}
+	}
+	/* ioq3 FinishShader: a blended first stage sorts after opaque surfaces. */
+	if (!sortSet) {
+		const xboxNV2AStage_t *first = &def->stages[0];
+
+		if (def->numStages && (first->srcBlend != GL_ONE || first->dstBlend != GL_ZERO))
+			def->sort = first->depthWrite ? XBOX_NV2A_SORT_SEE_THROUGH :
+				XBOX_NV2A_SORT_BLEND0;
+		else if (polygonOffset)
+			def->sort = XBOX_NV2A_SORT_DECAL;
+		else
+			def->sort = XBOX_NV2A_SORT_OPAQUE;
 	}
 }
 
-qhandle_t XboxNV2AShader_Register(const char *name, qboolean mipRawImage)
+/* ioq3 R_FindShader defaults: LIGHTMAP_2D for pics, LIGHTMAP_NONE for models. */
+static void XboxShaderImplicit(const char *name, int flavor,
+	qboolean mipRawImage, xboxNV2AShaderDef_t *def)
+{
+	xboxNV2AStage_t *stage = &def->stages[0];
+	int image = XboxShaderLoadImage(name);
+
+	def->sort = XBOX_NV2A_SORT_OPAQUE;
+	if (!image)
+		return;
+	stage->images[0] = image;
+	stage->numImages = 1;
+	stage->alphaFunc = XBOX_NV2A_ALPHA_NONE;
+	if (flavor == XBOX_NV2A_SHADER_2D) {
+		stage->srcBlend = GL_SRC_ALPHA;
+		stage->dstBlend = GL_ONE_MINUS_SRC_ALPHA;
+		stage->clamp = !mipRawImage;
+		stage->rgbGen = XBOX_NV2A_RGBGEN_VERTEX;
+		stage->alphaGen = XBOX_NV2A_ALPHAGEN_VERTEX;
+	} else {
+		stage->srcBlend = GL_ONE;
+		stage->dstBlend = GL_ZERO;
+		stage->depthWrite = qtrue;
+		stage->rgbGen = XBOX_NV2A_RGBGEN_LIGHTING_DIFFUSE;
+	}
+	def->numStages = 1;
+}
+
+static qhandle_t XboxShaderRegister(const char *name, int flavor,
+	qboolean mipRawImage)
 {
 	char stripped[MAX_QPATH];
-	xboxNV2AShaderState_t state;
+	xboxNV2AShaderDef_t def;
 	xboxShaderText_t *script;
 	qhandle_t handle;
 
@@ -393,27 +653,33 @@ qhandle_t XboxNV2AShader_Register(const char *name, qboolean mipRawImage)
 	if (!Q_stricmp(name, "white"))
 		return XBOX_NV2A_WHITE_SHADER;
 	COM_StripExtension(name, stripped, sizeof(stripped));
-	if (XboxNV2A_FindShader(stripped, &handle))
+	if (XboxNV2A_FindShader(stripped, flavor, &handle))
 		return handle;
 	if (!xboxShaderScriptsLoaded)
 		XboxShaderLoadScripts();
 
-	memset(&state, 0, sizeof(state));
+	memset(&def, 0, sizeof(def));
+	def.cull = XBOX_NV2A_CULL_FRONT;
 	script = XboxShaderFindText(stripped);
-	if (script) {
-		XboxShaderParse(script->body, &state);
-	} else {
-		/* Implicit 2D shader, as in ioq3 R_FindShader for LIGHTMAP_2D. */
-		state.image = XboxShaderLoadImage(name);
-		state.srcBlend = GL_SRC_ALPHA;
-		state.dstBlend = GL_ONE_MINUS_SRC_ALPHA;
-		state.alphaFunc = XBOX_NV2A_ALPHA_NONE;
-		state.clamp = !mipRawImage;
-		state.vertexColor = qtrue;
-		state.vertexAlpha = qtrue;
-	}
-	if (!state.image)
+	if (script)
+		XboxShaderParse(script->body, &def);
+	else
+		XboxShaderImplicit(name, flavor, mipRawImage, &def);
+	if (!def.numStages)
 		Sys_XboxLog("Xbox shaders: %s unresolved%s\n", stripped,
-			script ? " (script has no loadable 2D stage)" : "");
-	return XboxNV2A_CreateShader(stripped, &state);
+			script ? " (script has no drawable stage)" : "");
+	else if (flavor == XBOX_NV2A_SHADER_MODEL)
+		Sys_XboxLog("Xbox shaders: model %s stages=%d sort=%g cull=%d\n",
+			stripped, def.numStages, def.sort, def.cull);
+	return XboxNV2A_CreateShader(stripped, flavor, &def);
+}
+
+qhandle_t XboxNV2AShader_Register(const char *name, qboolean mipRawImage)
+{
+	return XboxShaderRegister(name, XBOX_NV2A_SHADER_2D, mipRawImage);
+}
+
+qhandle_t XboxNV2AShader_RegisterModel(const char *name)
+{
+	return XboxShaderRegister(name, XBOX_NV2A_SHADER_MODEL, qtrue);
 }

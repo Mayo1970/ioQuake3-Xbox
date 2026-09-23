@@ -27,6 +27,7 @@
   /usr/src/nxdk/lib/pdclib/include/limits.h \
   /src/code/sys/../renderernv2a/../qcommon/q_platform.h \
   /src/code/sys/../renderernv2a/../qcommon/surfaceflags.h \
+  /src/code/sys/../renderernv2a/../qcommon/qfiles.h \
   /src/code/sys/../renderernv2a/../renderercommon/tr_public.h \
   /src/code/sys/../renderernv2a/../renderercommon/tr_types.h
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
@@ -58,5 +59,6 @@
 /usr/src/nxdk/lib/pdclib/include/limits.h:
 /src/code/sys/../renderernv2a/../qcommon/q_platform.h:
 /src/code/sys/../renderernv2a/../qcommon/surfaceflags.h:
+/src/code/sys/../renderernv2a/../qcommon/qfiles.h:
 /src/code/sys/../renderernv2a/../renderercommon/tr_public.h:
 /src/code/sys/../renderernv2a/../renderercommon/tr_types.h:

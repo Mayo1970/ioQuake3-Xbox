@@ -1,5 +1,5 @@
-/src/code/renderernv2a/xbox_nv2a_shader.obj: \
-  /src/code/renderernv2a/xbox_nv2a_shader.c \
+/src/code/renderernv2a/xbox_nv2a_model.obj: \
+  /src/code/renderernv2a/xbox_nv2a_model.c \
   /src/code/renderernv2a/xbox_nv2a.h \
   /src/code/renderernv2a/../qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \

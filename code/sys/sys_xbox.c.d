@@ -31,6 +31,7 @@
   /src/code/sys/../qcommon/../qcommon/qfiles.h \
   /src/code/sys/../renderernv2a/xbox_nv2a.h \
   /src/code/sys/../renderernv2a/../qcommon/q_shared.h \
+  /src/code/sys/../renderernv2a/../qcommon/qfiles.h \
   /src/code/sys/../renderernv2a/../renderercommon/tr_public.h \
   /src/code/sys/../renderernv2a/../renderercommon/tr_types.h \
   /usr/src/nxdk/lib/hal/debug.h /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h \
@@ -86,6 +87,7 @@
 /src/code/sys/../qcommon/../qcommon/qfiles.h:
 /src/code/sys/../renderernv2a/xbox_nv2a.h:
 /src/code/sys/../renderernv2a/../qcommon/q_shared.h:
+/src/code/sys/../renderernv2a/../qcommon/qfiles.h:
 /src/code/sys/../renderernv2a/../renderercommon/tr_public.h:
 /src/code/sys/../renderernv2a/../renderercommon/tr_types.h:
 /usr/src/nxdk/lib/hal/debug.h:

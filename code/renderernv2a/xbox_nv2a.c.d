@@ -27,6 +27,7 @@
   /usr/src/nxdk/lib/pdclib/include/limits.h \
   /src/code/renderernv2a/../qcommon/q_platform.h \
   /src/code/renderernv2a/../qcommon/surfaceflags.h \
+  /src/code/renderernv2a/../qcommon/qfiles.h \
   /src/code/renderernv2a/../renderercommon/tr_public.h \
   /src/code/renderernv2a/../renderercommon/tr_types.h \
   /src/code/renderernv2a/../qcommon/qcommon.h \
@@ -96,6 +97,7 @@
 /usr/src/nxdk/lib/pdclib/include/limits.h:
 /src/code/renderernv2a/../qcommon/q_platform.h:
 /src/code/renderernv2a/../qcommon/surfaceflags.h:
+/src/code/renderernv2a/../qcommon/qfiles.h:
 /src/code/renderernv2a/../renderercommon/tr_public.h:
 /src/code/renderernv2a/../renderercommon/tr_types.h:
 /src/code/renderernv2a/../qcommon/qcommon.h:
