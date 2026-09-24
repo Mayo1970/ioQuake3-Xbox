@@ -63,6 +63,8 @@ typedef struct {
 	xboxNV2AStage_t *stages;
 	/* Stages 0 and 1 draw as one multitextured pass. */
 	qboolean collapsed;
+	/* One pass whose colours and texcoords are plain world vertex data. */
+	qboolean fastWorld;
 } XboxNV2AShader;
 
 /* ioq3 tess: one batch of CPU vertices with one shader, drawn once per stage. */
@@ -103,6 +105,11 @@ typedef struct {
 	unsigned short dlightIndexes[XBOX_NV2A_TESS_INDEXES];
 	/* Stream indexes of one draw; a clipped triangle can become three. */
 	unsigned short drawIndexes[3 * XBOX_NV2A_TESS_INDEXES];
+	/* fastWorld surfaces no plane cuts; they skip the arrays above and stream as they are. */
+	const xboxNV2AWorldSurface_t *fast[XBOX_NV2A_TESS_VERTS];
+	int numFast;
+	int fastVerts;
+	int fastIndexes;
 } XboxNV2ATess;
 
 /* ioq3 srfPoly_t; verts points into xboxNV2APolyVerts. */
@@ -337,6 +344,7 @@ typedef struct {
 	unsigned int frames;
 	unsigned int draws;
 	unsigned int verts;
+	unsigned int fastVerts;
 	unsigned int indexes;
 	unsigned int streamWraps;
 	unsigned int pushResets;
@@ -383,11 +391,12 @@ static void XboxNV2ALogPerf(void)
 	QueryPerformanceFrequency(&frequency);
 	us = 1000000.0 / ((double)frequency.QuadPart * frames);
 	Sys_XboxLog("Xbox perf: %u frames, per frame us: total=%u scene=%u gpuwait=%u vblank=%u "
-		"midwait=%u; per frame: draws=%u verts=%u indexes=%u; wraps=%u pushresets=%u\n",
+		"midwait=%u; per frame: draws=%u verts=%u fastverts=%u indexes=%u; wraps=%u "
+		"pushresets=%u\n",
 		c->frames, (unsigned int)(c->frameTicks * us), (unsigned int)(c->sceneTicks * us),
 		(unsigned int)(c->endWaitTicks * us), (unsigned int)(c->vblankTicks * us),
 		(unsigned int)(c->midWaitTicks * us), c->draws / frames, c->verts / frames,
-		c->indexes / frames, c->streamWraps, c->pushResets);
+		c->fastVerts / frames, c->indexes / frames, c->streamWraps, c->pushResets);
 	{
 		LONGLONG lastBegin = c->lastBegin;
 
@@ -813,6 +822,30 @@ static qboolean XboxNV2ACanCollapse(const XboxNV2AShader *shader)
 	return qtrue;
 }
 
+static qboolean XboxNV2AStageTexCoordsPlain(const xboxNV2AStage_t *stage)
+{
+	return (stage->tcGen == XBOX_NV2A_TCGEN_TEXTURE || stage->tcGen == XBOX_NV2A_TCGEN_LIGHTMAP) &&
+		!stage->numTexMods;
+}
+
+/* One pass that ComputeColors and ComputeTexCoords would only copy world vertex data for. */
+static qboolean XboxNV2ACanDrawFast(const XboxNV2AShader *shader)
+{
+	const xboxNV2AStage_t *stage = &shader->stages[0];
+
+	if (shader->isSky || shader->numDeforms || shader->numStages != (shader->collapsed ? 2 : 1))
+		return qfalse;
+	if (!XboxNV2AStageTexCoordsPlain(stage) ||
+		(shader->collapsed && !XboxNV2AStageTexCoordsPlain(&shader->stages[1])))
+		return qfalse;
+	if (stage->rgbGen != XBOX_NV2A_RGBGEN_IDENTITY_LIGHTING &&
+		stage->rgbGen != XBOX_NV2A_RGBGEN_IDENTITY && stage->rgbGen != XBOX_NV2A_RGBGEN_VERTEX &&
+		stage->rgbGen != XBOX_NV2A_RGBGEN_EXACT_VERTEX)
+		return qfalse;
+	return stage->alphaGen == XBOX_NV2A_ALPHAGEN_IDENTITY ||
+		stage->alphaGen == XBOX_NV2A_ALPHAGEN_VERTEX;
+}
+
 /* Unresolved names are kept without stages so the loader does not retry them. */
 qboolean XboxNV2A_FindShader(const char *name, int flavor, qhandle_t *handle)
 {
@@ -885,6 +918,7 @@ qhandle_t XboxNV2A_CreateShader(const char *name, int flavor,
 		shader->collapsed = XboxNV2ACanCollapse(shader);
 		if (shader->collapsed)
 			xboxNV2ACollapsedCount++;
+		shader->fastWorld = XboxNV2ACanDrawFast(shader);
 	}
 	xboxNV2AShaderCount++;
 	return XboxNV2AShaderUsable(shader) ? (qhandle_t)(xboxNV2AShaderCount - 1) : 0;
@@ -1042,6 +1076,9 @@ static void XboxNV2AResetTextures(void)
 	xboxNV2ATess.lightmap = 0;
 	xboxNV2ATess.numVerts = 0;
 	xboxNV2ATess.numIndexes = 0;
+	xboxNV2ATess.numFast = 0;
+	xboxNV2ATess.fastVerts = 0;
+	xboxNV2ATess.fastIndexes = 0;
 }
 
 /* xgux_draw_arrays splits the draw into DRAW_ARRAYS packets of 120 vertices. */
@@ -1633,6 +1670,97 @@ static void XboxNV2ADrawShaderStages(const XboxNV2AShader *shader, int cull,
 	}
 }
 
+/* XboxNV2ADrawStage's output for a fastWorld shader, written straight from the world vertices. */
+static void XboxNV2ADrawFastSurfaces(const XboxNV2AShader *shader)
+{
+	XboxNV2ATess *tess = &xboxNV2ATess;
+	const xboxNV2AStage_t *stage = &shader->stages[0];
+	const xboxNV2AStage_t *second = shader->collapsed ? &shader->stages[1] : NULL;
+	qboolean rgbVertex = stage->rgbGen == XBOX_NV2A_RGBGEN_VERTEX ||
+		stage->rgbGen == XBOX_NV2A_RGBGEN_EXACT_VERTEX;
+	/* ComputeColors keeps the vertex alpha under alphaGen identity after rgbGen vertex only. */
+	qboolean alphaVertex = stage->alphaGen == XBOX_NV2A_ALPHAGEN_VERTEX ||
+		stage->rgbGen == XBOX_NV2A_RGBGEN_VERTEX;
+	qboolean lightSt0 = stage->tcGen == XBOX_NV2A_TCGEN_LIGHTMAP;
+	qboolean lightSt1 = second && second->tcGen == XBOX_NV2A_TCGEN_LIGHTMAP;
+	unsigned short *elements = tess->drawIndexes;
+	XboxNV2AColoredVertex *out;
+	unsigned int first, base;
+	unsigned int count = 0;
+	int i, k;
+
+	xboxNV2ALastShaderName = shader->name;
+	XboxNV2AApplyStageState(stage, XboxNV2AStageImage(stage, tess->shaderTime),
+		second ? XboxNV2AStageImage(second, tess->shaderTime) : XBOX_NV2A_WHITE_IMAGE,
+		second ? second->clamp : qtrue, qtrue, qtrue, XboxNV2AViewCull(shader->cull),
+		shader->polygonOffset);
+	out = XboxNV2AStreamVertices((unsigned int)tess->fastVerts);
+	first = base = xboxNV2AVertexUsed;
+	for (i = 0; i < tess->numFast; ++i) {
+		const xboxNV2AWorldSurface_t *surface = tess->fast[i];
+		const xboxNV2AWorldVert_t *in = surface->verts;
+
+		for (k = 0; k < surface->numIndexes; ++k)
+			elements[count++] = (unsigned short)(base + surface->indexes[k]);
+		/* Fields in struct order, so the write-combined stream sees sequential stores. */
+		for (k = 0; k < surface->numVerts; ++k, ++in, ++out) {
+			const float *st0 = lightSt0 ? in->lightSt : in->st;
+			const float *st1 = lightSt1 ? in->lightSt : in->st;
+
+			out->position[0] = in->xyz[0];
+			out->position[1] = in->xyz[1];
+			out->position[2] = in->xyz[2];
+			out->color[0] = rgbVertex ? in->color[0] : 255;
+			out->color[1] = rgbVertex ? in->color[1] : 255;
+			out->color[2] = rgbVertex ? in->color[2] : 255;
+			out->color[3] = alphaVertex ? in->color[3] : 255;
+			out->texcoord[0] = st0[0];
+			out->texcoord[1] = st0[1];
+			out->texcoord1[0] = second ? st1[0] : 0.0f;
+			out->texcoord1[1] = second ? st1[1] : 0.0f;
+		}
+		base += (unsigned int)surface->numVerts;
+	}
+	xboxNV2AVertexUsed = base;
+	xboxNV2APerf.verts += base - first;
+	xboxNV2APerf.fastVerts += base - first;
+	if (count)
+		XboxNV2ADrawElements(elements, count);
+	tess->numFast = 0;
+	tess->fastVerts = 0;
+	tess->fastIndexes = 0;
+}
+
+/* True when the whole box is in front of the active transform's near plane. */
+static qboolean XboxNV2ABoxInFrontOfNear(const vec3_t bounds[2])
+{
+	float d = xboxNV2ANearPlane[3];
+	int i;
+
+	for (i = 0; i < 3; ++i)
+		d += xboxNV2ANearPlane[i] * bounds[xboxNV2ANearPlane[i] >= 0.0f ? 0 : 1][i];
+	return d >= 0.0f;
+}
+
+/* Queues a world surface of the current batch on the fast list; qfalse means use the tess. */
+static qboolean XboxNV2AAddFastSurface(const xboxNV2AWorldSurface_t *surface)
+{
+	XboxNV2ATess *tess = &xboxNV2ATess;
+
+	/* Fog, dlight and portal clipping read the tess arrays. */
+	if (!xboxNV2AShaders[tess->shader].fastWorld || tess->fogIndex || tess->dlighted ||
+		xboxNV2AViewIsPortal || !XboxNV2ABoxInFrontOfNear(surface->bounds))
+		return qfalse;
+	if (tess->numFast == XBOX_NV2A_TESS_VERTS ||
+		tess->fastVerts + surface->numVerts > XBOX_NV2A_TESS_VERTS ||
+		tess->fastIndexes + surface->numIndexes > XBOX_NV2A_TESS_INDEXES)
+		XboxNV2ADrawFastSurfaces(&xboxNV2AShaders[tess->shader]);
+	tess->fast[tess->numFast++] = surface;
+	tess->fastVerts += surface->numVerts;
+	tess->fastIndexes += surface->numIndexes;
+	return qtrue;
+}
+
 /* ioq3 RB_FogPass: the fog image blended over the surface; opaque shaders need equal depth. */
 static void XboxNV2AFogPass(const XboxNV2AShader *shader)
 {
@@ -2022,6 +2150,8 @@ static void XboxNV2AEndSurface(void)
 	const XboxNV2AShader *shader = &xboxNV2AShaders[tess->shader];
 	int i;
 
+	if (tess->numFast)
+		XboxNV2ADrawFastSurfaces(shader);
 	/* 2D tess holds bare quads without indexes, so only 3D surfaces deform. */
 	if (tess->shader > 0 && tess->is3D && tess->numVerts > 0 && tess->numIndexes > 0)
 		XboxNV2ADeformGeometry(shader);
@@ -2191,7 +2321,7 @@ qboolean XboxNV2A_Init(void)
 	xboxNV2ADynamicLight = Cvar_Get("r_dynamiclight", "1", CVAR_ARCHIVE);
 	/* ioq3's cvar, read when a shader is created, so a change applies from the next map. */
 	xboxNV2AMultitexture = Cvar_Get("r_ext_multitexture", "1", CVAR_ARCHIVE);
-	/* ioq3's cvar and default: 0 stops waiting for a vblank at every frame start. */
+	/* ioq3's cvar and default: 0 no vblank wait, 1 a wait per frame, N shows each frame N vblanks. */
 	xboxNV2ASwapInterval = Cvar_Get("r_swapInterval", "0", CVAR_ARCHIVE);
 	xboxNV2AInitialized = qtrue;
 	XboxNV2AResetTextures();
@@ -2304,7 +2434,7 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 	}
 	xboxNV2APerf.lastBegin = now;
 	/* pbkit rotates 3 buffers; this frame's one leaves the screen with the flip queued two frames ago. */
-	if (xboxNV2ASwapInterval->integer) {
+	if (xboxNV2ASwapInterval->integer == 1) {
 		pb_wait_for_vbl();
 	} else if (xboxNV2AFlipsQueued >= 2) {
 		while ((int)(pb_get_vbl_counter() - xboxNV2AFlipShow[0]) < 0)
@@ -2320,6 +2450,9 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 	xboxNV2ATess.shader = 0;
 	xboxNV2ATess.numVerts = 0;
 	xboxNV2ATess.numIndexes = 0;
+	xboxNV2ATess.numFast = 0;
+	xboxNV2ATess.fastVerts = 0;
+	xboxNV2ATess.fastIndexes = 0;
 	if (XBOX_NV2A_DIAGNOSTICS) {
 		pb_erase_text_screen();
 		pb_printat(0, 0, "ioQuake3 Xbox NV2A %dx%d", xboxNV2AWidth, xboxNV2AHeight);
@@ -2365,6 +2498,15 @@ void XboxNV2A_EndFrame(int *frontEndMsec, int *backEndMsec)
 	xboxNV2APolyVertCount = 0;
 	xboxNV2ASceneFirstPoly = 0;
 	xboxNV2AInFrame = qfalse;
+	/* A flip queued after vblank show - 1 appears at show, so the last frame stays N vblanks. */
+	if (xboxNV2ASwapInterval->integer > 1 && xboxNV2AFlipsQueued) {
+		DWORD earliest = xboxNV2AFlipShow[1] + (DWORD)(xboxNV2ASwapInterval->integer - 1);
+
+		waitStart = XboxNV2ATicks();
+		while ((int)(pb_get_vbl_counter() - earliest) < 0)
+			pb_wait_for_vbl();
+		xboxNV2APerf.vblankTicks += XboxNV2ATicks() - waitStart;
+	}
 	waitStart = XboxNV2ATicks();
 	XboxNV2AWaitIdle("end frame");
 	if (XBOX_NV2A_DIAGNOSTICS)
@@ -3379,7 +3521,8 @@ static void XboxNV2ADrawSurfaces(const refdef_t *fd, const float *worldToScreen,
 			XboxNV2ATessSurface(entity, drawSurf->md3);
 			XboxNV2AEndSurface();
 		} else if (drawSurf->world) {
-			XboxNV2ATessWorldSurface(drawSurf->world);
+			if (!XboxNV2AAddFastSurface(drawSurf->world))
+				XboxNV2ATessWorldSurface(drawSurf->world);
 		} else if (drawSurf->poly) {
 			if (verts <= XBOX_NV2A_TESS_VERTS)
 				XboxNV2ATessPoly(drawSurf->poly);

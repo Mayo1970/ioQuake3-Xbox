@@ -107,6 +107,10 @@ NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DIOQUAKE3_XBOX_SHELL -DBOTLIB -DC_ONLY -O
 	-I/usr/src/nxdk/lib/net/lwip/src/include/compat/posix
 NXDK_NET = y
 NXDK_USB_ENABLE_HID = y
+# nxdk's DEBUG=y build also writes D:\ioquake3.log; delete sys_xbox.obj when switching.
+ifeq ($(DEBUG),y)
+NXDK_CFLAGS += -DXBOX_DEBUG_LOG
+endif
 SHADER_OBJS = \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a_vp.inl \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a_fp.inl
@@ -156,6 +160,15 @@ CLEANRULES += clean-xbox-modules
 NXDK_DIR ?= /usr/src/nxdk
 
 include $(NXDK_DIR)/Makefile
+
+# Hot per-vertex code only; the rest and the game modules stay -O2 without fast-math.
+# Flags are not tracked, so delete these objects after changing them.
+XBOX_FAST_MATH_OBJS = $(patsubst %.c,%.obj, \
+	$(CURDIR)/code/renderernv2a/xbox_nv2a.c $(CURDIR)/code/renderernv2a/xbox_nv2a_shader.c \
+	$(CURDIR)/code/renderernv2a/xbox_nv2a_model.c $(CURDIR)/code/renderernv2a/xbox_nv2a_world.c \
+	$(CURDIR)/code/renderernv2a/xbox_nv2a_sky.c $(CURDIR)/code/renderernv2a/xbox_nv2a_dxt.c \
+	$(CURDIR)/code/qcommon/q_math.c)
+$(XBOX_FAST_MATH_OBJS): NXDK_CFLAGS += -O3 -ffast-math
 
 # nxdk-link hard-codes a 64 KiB stack that lld keeps; Com_Init needs 1 MiB,
 # so repeat the link recipe with a larger stack.

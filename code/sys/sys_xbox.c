@@ -40,12 +40,14 @@ static void Sys_XboxNormalizePath(char *path)
 
 void Sys_XboxLogOpen(void)
 {
+#ifdef XBOX_DEBUG_LOG
 	if (xboxLogFile)
 		return;
 
 	xboxLogFile = fopen("D:\\ioquake3.log", "wb");
 	if (!xboxLogFile)
 		debugPrint("Xbox log open failed: D:\\ioquake3.log\n");
+#endif
 }
 
 void Sys_XboxLog(const char *format, ...)
@@ -53,6 +55,11 @@ void Sys_XboxLog(const char *format, ...)
 	char message[512];
 	va_list args;
 
+#ifndef XBOX_DEBUG_LOG
+	/* No log file: only the debug screen (boot, fatal errors) still shows the text. */
+	if (XboxNV2A_OwnsScreen())
+		return;
+#endif
 	va_start(args, format);
 	vsnprintf(message, sizeof(message), format, args);
 	va_end(args);

@@ -1,5 +1,5 @@
-/src/code/sys/xbox_snd_engine.obj: /src/code/sys/xbox_snd_engine.c \
-  /src/code/sys/xbox_snd.h /src/code/sys/../qcommon/q_shared.h \
+/work/code/sys/xbox_snd_engine.obj: /work/code/sys/xbox_snd_engine.c \
+  /work/code/sys/xbox_snd.h /work/code/sys/../qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
@@ -24,16 +24,16 @@
   /usr/src/nxdk/lib/pdclib/include/time.h \
   /usr/src/nxdk/lib/pdclib/include/ctype.h \
   /usr/src/nxdk/lib/pdclib/include/limits.h \
-  /src/code/sys/../qcommon/q_platform.h \
-  /src/code/sys/../qcommon/surfaceflags.h \
-  /src/code/sys/../client/snd_local.h \
-  /src/code/sys/../client/../qcommon/q_shared.h \
-  /src/code/sys/../client/../qcommon/qcommon.h \
-  /src/code/sys/../client/../qcommon/../qcommon/cm_public.h \
-  /src/code/sys/../client/../qcommon/../qcommon/qfiles.h \
-  /src/code/sys/../client/snd_public.h
-/src/code/sys/xbox_snd.h:
-/src/code/sys/../qcommon/q_shared.h:
+  /work/code/sys/../qcommon/q_platform.h \
+  /work/code/sys/../qcommon/surfaceflags.h \
+  /work/code/sys/../client/snd_local.h \
+  /work/code/sys/../client/../qcommon/q_shared.h \
+  /work/code/sys/../client/../qcommon/qcommon.h \
+  /work/code/sys/../client/../qcommon/../qcommon/cm_public.h \
+  /work/code/sys/../client/../qcommon/../qcommon/qfiles.h \
+  /work/code/sys/../client/snd_public.h
+/work/code/sys/xbox_snd.h:
+/work/code/sys/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
@@ -58,11 +58,11 @@
 /usr/src/nxdk/lib/pdclib/include/time.h:
 /usr/src/nxdk/lib/pdclib/include/ctype.h:
 /usr/src/nxdk/lib/pdclib/include/limits.h:
-/src/code/sys/../qcommon/q_platform.h:
-/src/code/sys/../qcommon/surfaceflags.h:
-/src/code/sys/../client/snd_local.h:
-/src/code/sys/../client/../qcommon/q_shared.h:
-/src/code/sys/../client/../qcommon/qcommon.h:
-/src/code/sys/../client/../qcommon/../qcommon/cm_public.h:
-/src/code/sys/../client/../qcommon/../qcommon/qfiles.h:
-/src/code/sys/../client/snd_public.h:
+/work/code/sys/../qcommon/q_platform.h:
+/work/code/sys/../qcommon/surfaceflags.h:
+/work/code/sys/../client/snd_local.h:
+/work/code/sys/../client/../qcommon/q_shared.h:
+/work/code/sys/../client/../qcommon/qcommon.h:
+/work/code/sys/../client/../qcommon/../qcommon/cm_public.h:
+/work/code/sys/../client/../qcommon/../qcommon/qfiles.h:
+/work/code/sys/../client/snd_public.h:
