@@ -23,6 +23,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../qcommon/q_shared.h"
 #include "../qcommon/qcommon.h"
 
+#if defined(XBOX)
+#	include "../sys/sys_xbox.h"
+#endif
+
 #if defined(_WIN32) && !defined(XBOX)
 #	include <winsock2.h>
 #	include <ws2tcpip.h>
@@ -1695,6 +1699,10 @@ void NET_Sleep(int msec)
 	fd_set fdr;
 	int retval;
 	SOCKET highestfd = INVALID_SOCKET;
+#if defined(XBOX)
+	static int xboxSleepDiagCalls;
+	qboolean xboxSleepTrace = qfalse;
+#endif
 
 	if(msec < 0)
 		msec = 0;
@@ -1715,6 +1723,16 @@ void NET_Sleep(int msec)
 			highestfd = ip6_socket;
 	}
 
+#if defined(XBOX)
+	if(com_sv_running->integer && msec > 0 && xboxSleepDiagCalls < 12)
+	{
+		xboxSleepTrace = qtrue;
+		xboxSleepDiagCalls++;
+		Sys_XboxLog("Xbox NET_Sleep %d: entry msec=%d ip=%d ip6=%d highest=%d\n",
+			xboxSleepDiagCalls, msec, ip_socket, ip6_socket, highestfd);
+	}
+#endif
+
 #if defined(_WIN32) && !defined(XBOX)
 	if(highestfd == INVALID_SOCKET)
 	{
@@ -1727,12 +1745,32 @@ void NET_Sleep(int msec)
 	timeout.tv_sec = msec/1000;
 	timeout.tv_usec = (msec%1000)*1000;
 
+#if defined(XBOX)
+	if(xboxSleepTrace)
+		Sys_XboxLog("Xbox NET_Sleep %d: select begin nfds=%d timeout=%d.%06d\n",
+			xboxSleepDiagCalls, highestfd + 1, (int)timeout.tv_sec, (int)timeout.tv_usec);
+#endif
 	retval = select(highestfd + 1, &fdr, NULL, NULL, &timeout);
+#if defined(XBOX)
+	if(xboxSleepTrace)
+		Sys_XboxLog("Xbox NET_Sleep %d: select end retval=%d errno=%d\n",
+			xboxSleepDiagCalls, retval, retval == SOCKET_ERROR ? errno : 0);
+#endif
 
 	if(retval == SOCKET_ERROR)
 		Com_Printf("Warning: select() syscall failed: %s\n", NET_ErrorString());
 	else if(retval > 0)
+	{
+#if defined(XBOX)
+		if(xboxSleepTrace)
+			Sys_XboxLog("Xbox NET_Sleep %d: NET_Event begin\n", xboxSleepDiagCalls);
+#endif
 		NET_Event(&fdr);
+#if defined(XBOX)
+		if(xboxSleepTrace)
+			Sys_XboxLog("Xbox NET_Sleep %d: NET_Event end\n", xboxSleepDiagCalls);
+#endif
+	}
 }
 
 /*

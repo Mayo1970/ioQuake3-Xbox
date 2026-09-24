@@ -27,7 +27,8 @@
   /work/code/qcommon/q_platform.h /work/code/qcommon/surfaceflags.h \
   /work/code/qcommon/qcommon.h /work/code/qcommon/../qcommon/cm_public.h \
   /work/code/qcommon/../qcommon/qfiles.h \
-  /usr/src/nxdk/lib/pdclib/platform/xbox/include/setjmp.h
+  /usr/src/nxdk/lib/pdclib/platform/xbox/include/setjmp.h \
+  /work/code/qcommon/../sys/sys_xbox.h
 /work/code/qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
@@ -59,3 +60,4 @@
 /work/code/qcommon/../qcommon/cm_public.h:
 /work/code/qcommon/../qcommon/qfiles.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/setjmp.h:
+/work/code/qcommon/../sys/sys_xbox.h:

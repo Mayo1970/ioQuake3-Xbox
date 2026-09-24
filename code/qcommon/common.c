@@ -24,6 +24,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "q_shared.h"
 #include "qcommon.h"
 #include <setjmp.h>
+#ifdef XBOX
+#include "../sys/sys_xbox.h"
+#endif
 #if !defined(_WIN32) && !defined(XBOX)
 #include <netinet/in.h>
 #include <sys/stat.h> // umask
@@ -3112,11 +3115,30 @@ void Com_Frame( void ) {
 	int		timeBeforeEvents;
 	int		timeBeforeClient;
 	int		timeAfter;
+#ifdef XBOX
+	int		xboxDiagFrame = 0;
+	int		xboxWaitPass = 0;
+	qboolean	xboxTraceFrame = qfalse;
+	static qboolean xboxDiagActive = qfalse;
+	static int xboxDiagFrames = 0;
+#endif
   
 
 	if ( setjmp (abortframe) ) {
 		return;			// an ERR_DROP was thrown
 	}
+
+#ifdef XBOX
+	if (!xboxDiagActive && com_sv_running && com_sv_running->integer) {
+		xboxDiagActive = qtrue;
+		Sys_XboxLog("Xbox frame trace: local server became active\n");
+	}
+	if (xboxDiagActive && xboxDiagFrames < 24) {
+		xboxTraceFrame = qtrue;
+		xboxDiagFrame = ++xboxDiagFrames;
+		Sys_XboxLog("Xbox frame trace %d: begin preframe wait\n", xboxDiagFrame);
+	}
+#endif
 
 	timeBeforeFirstEvents =0;
 	timeBeforeServer =0;
@@ -3166,6 +3188,10 @@ void Com_Frame( void ) {
 
 	do
 	{
+#ifdef XBOX
+		if (xboxTraceFrame && xboxWaitPass < 3)
+			Sys_XboxLog("Xbox frame trace %d: wait pass %d schedule begin\n", xboxDiagFrame, xboxWaitPass + 1);
+#endif
 		if(com_sv_running->integer)
 		{
 			timeValSV = SV_SendQueuedPackets();
@@ -3177,21 +3203,61 @@ void Com_Frame( void ) {
 		}
 		else
 			timeVal = Com_TimeVal(minMsec);
+#ifdef XBOX
+		if (xboxTraceFrame && xboxWaitPass < 3)
+			Sys_XboxLog("Xbox frame trace %d: wait pass %d schedule end sv=%d wait=%d\n",
+				xboxDiagFrame, xboxWaitPass + 1, com_sv_running->integer ? timeValSV : -1, timeVal);
+#endif
 		
-		if(com_busyWait->integer || timeVal < 1)
+		if(com_busyWait->integer || timeVal < 1) {
+#ifdef XBOX
+			if (xboxTraceFrame && xboxWaitPass < 3)
+				Sys_XboxLog("Xbox frame trace %d: wait pass %d sleep(0) begin\n", xboxDiagFrame, xboxWaitPass + 1);
+#endif
 			NET_Sleep(0);
-		else
+		} else {
+#ifdef XBOX
+			if (xboxTraceFrame && xboxWaitPass < 3)
+				Sys_XboxLog("Xbox frame trace %d: wait pass %d sleep(%d) begin\n", xboxDiagFrame, xboxWaitPass + 1, timeVal - 1);
+#endif
 			NET_Sleep(timeVal - 1);
+		}
+#ifdef XBOX
+		if (xboxTraceFrame && xboxWaitPass < 3)
+			Sys_XboxLog("Xbox frame trace %d: wait pass %d sleep end\n", xboxDiagFrame, xboxWaitPass + 1);
+		xboxWaitPass++;
+#endif
 	} while(Com_TimeVal(minMsec));
+
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: preframe wait end passes=%d\n", xboxDiagFrame, xboxWaitPass);
+#endif
 	
 	IN_Frame();
 
 	lastTime = com_frameTime;
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: first event loop begin\n", xboxDiagFrame);
+#endif
 	com_frameTime = Com_EventLoop();
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: first event loop end\n", xboxDiagFrame);
+#endif
 	
 	msec = com_frameTime - lastTime;
 
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: first command buffer begin\n", xboxDiagFrame);
+#endif
 	Cbuf_Execute ();
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: first command buffer end\n", xboxDiagFrame);
+#endif
 
 	if (com_altivec->modified)
 	{
@@ -3209,7 +3275,15 @@ void Com_Frame( void ) {
 		timeBeforeServer = Sys_Milliseconds ();
 	}
 
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: SV_Frame begin msec=%d\n", xboxDiagFrame, msec);
+#endif
 	SV_Frame( msec );
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: SV_Frame end\n", xboxDiagFrame);
+#endif
 
 	// if "dedicated" has been modified, start up
 	// or shut down the client system.
@@ -3236,8 +3310,24 @@ void Com_Frame( void ) {
 	if ( com_speeds->integer ) {
 		timeBeforeEvents = Sys_Milliseconds ();
 	}
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: second event loop begin\n", xboxDiagFrame);
+#endif
 	Com_EventLoop();
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: second event loop end\n", xboxDiagFrame);
+#endif
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: second command buffer begin\n", xboxDiagFrame);
+#endif
 	Cbuf_Execute ();
+#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: second command buffer end\n", xboxDiagFrame);
+#endif
 
 
 	//
@@ -3247,7 +3337,15 @@ void Com_Frame( void ) {
 		timeBeforeClient = Sys_Milliseconds ();
 	}
 
+	#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: CL_Frame begin msec=%d\n", xboxDiagFrame, msec);
+#endif
 	CL_Frame( msec );
+	#ifdef XBOX
+	if (xboxTraceFrame)
+		Sys_XboxLog("Xbox frame trace %d: CL_Frame end\n", xboxDiagFrame);
+#endif
 
 	if ( com_speeds->integer ) {
 		timeAfter = Sys_Milliseconds ();

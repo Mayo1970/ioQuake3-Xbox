@@ -1,5 +1,5 @@
-/src/code/qcommon/net_ip.obj: /src/code/qcommon/net_ip.c \
-  /src/code/qcommon/../qcommon/q_shared.h \
+/work/code/qcommon/net_ip.obj: /work/code/qcommon/net_ip.c \
+  /work/code/qcommon/../qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
@@ -24,11 +24,12 @@
   /usr/src/nxdk/lib/pdclib/include/time.h \
   /usr/src/nxdk/lib/pdclib/include/ctype.h \
   /usr/src/nxdk/lib/pdclib/include/limits.h \
-  /src/code/qcommon/../qcommon/q_platform.h \
-  /src/code/qcommon/../qcommon/surfaceflags.h \
-  /src/code/qcommon/../qcommon/qcommon.h \
-  /src/code/qcommon/../qcommon/../qcommon/cm_public.h \
-  /src/code/qcommon/../qcommon/../qcommon/qfiles.h \
+  /work/code/qcommon/../qcommon/q_platform.h \
+  /work/code/qcommon/../qcommon/surfaceflags.h \
+  /work/code/qcommon/../qcommon/qcommon.h \
+  /work/code/qcommon/../qcommon/../qcommon/cm_public.h \
+  /work/code/qcommon/../qcommon/../qcommon/qfiles.h \
+  /work/code/qcommon/../sys/sys_xbox.h \
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/sockets.h \
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/opt.h \
   /usr/src/nxdk/lib/net/nforceif/include/lwipopts.h \
@@ -74,7 +75,7 @@
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/errno.h \
   /usr/src/nxdk/lib/pdclib/include/errno.h \
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/netdb.h
-/src/code/qcommon/../qcommon/q_shared.h:
+/work/code/qcommon/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
@@ -99,11 +100,12 @@
 /usr/src/nxdk/lib/pdclib/include/time.h:
 /usr/src/nxdk/lib/pdclib/include/ctype.h:
 /usr/src/nxdk/lib/pdclib/include/limits.h:
-/src/code/qcommon/../qcommon/q_platform.h:
-/src/code/qcommon/../qcommon/surfaceflags.h:
-/src/code/qcommon/../qcommon/qcommon.h:
-/src/code/qcommon/../qcommon/../qcommon/cm_public.h:
-/src/code/qcommon/../qcommon/../qcommon/qfiles.h:
+/work/code/qcommon/../qcommon/q_platform.h:
+/work/code/qcommon/../qcommon/surfaceflags.h:
+/work/code/qcommon/../qcommon/qcommon.h:
+/work/code/qcommon/../qcommon/../qcommon/cm_public.h:
+/work/code/qcommon/../qcommon/../qcommon/qfiles.h:
+/work/code/qcommon/../sys/sys_xbox.h:
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/sockets.h:
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/opt.h:
 /usr/src/nxdk/lib/net/nforceif/include/lwipopts.h:
