@@ -1,33 +1,6 @@
-/*
-===========================================================================
-Copyright (C) 1999-2005 Id Software, Inc.
+/* Copyright (C) 1999-2005 Id Software, Inc. Quake III Arena source code, GPLv2 or later (see COPYING.txt). */
 
-This file is part of Quake III Arena source code.
-
-Quake III Arena source code is free software; you can redistribute it
-and/or modify it under the terms of the GNU General Public License as
-published by the Free Software Foundation; either version 2 of the License,
-or (at your option) any later version.
-
-Quake III Arena source code is distributed in the hope that it will be
-useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Quake III Arena source code; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-===========================================================================
-*/
-
-/*****************************************************************************
- * name:		be_ai_char.c
- *
- * desc:		bot characters
- *
- * $Archive: /MissionPack/code/botlib/be_ai_char.c $
- *
- *****************************************************************************/
+// be_ai_char.c: bot characters
 
 #include "../qcommon/q_shared.h"
 #include "l_log.h"
@@ -77,11 +50,6 @@ typedef struct bot_character_s
 bot_character_t *botcharacters[MAX_CLIENTS + 1];
 
 //========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//========================================================================
 bot_character_t *BotCharacterFromHandle(int handle)
 {
 	if (handle <= 0 || handle > MAX_CLIENTS)
@@ -96,11 +64,6 @@ bot_character_t *BotCharacterFromHandle(int handle)
 	} //end if
 	return botcharacters[handle];
 } //end of the function BotCharacterFromHandle
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //===========================================================================
 void BotDumpCharacter(bot_character_t *ch)
 {
@@ -121,11 +84,6 @@ void BotDumpCharacter(bot_character_t *ch)
 	Log_Write("}\n");
 } //end of the function BotDumpCharacter
 //========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//========================================================================
 void BotFreeCharacterStrings(bot_character_t *ch)
 {
 	int i;
@@ -138,11 +96,6 @@ void BotFreeCharacterStrings(bot_character_t *ch)
 		} //end if
 	} //end for
 } //end of the function BotFreeCharacterStrings
-//========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //========================================================================
 void BotFreeCharacter2(int handle)
 {
@@ -161,21 +114,11 @@ void BotFreeCharacter2(int handle)
 	botcharacters[handle] = NULL;
 } //end of the function BotFreeCharacter2
 //========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//========================================================================
 void BotFreeCharacter(int handle)
 {
 	if (!LibVarGetValue("bot_reloadcharacters")) return;
 	BotFreeCharacter2(handle);
 } //end of the function BotFreeCharacter
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //===========================================================================
 void BotDefaultCharacteristics(bot_character_t *ch, bot_character_t *defaultch)
 {
@@ -203,11 +146,6 @@ void BotDefaultCharacteristics(bot_character_t *ch, bot_character_t *defaultch)
 		} //end else if
 	} //end for
 } //end of the function BotDefaultCharacteristics
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //===========================================================================
 bot_character_t *BotLoadCharacterFromFile(char *charfile, int skill)
 {
@@ -354,11 +292,6 @@ bot_character_t *BotLoadCharacterFromFile(char *charfile, int skill)
 	return ch;
 } //end of the function BotLoadCharacterFromFile
 //===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//===========================================================================
 int BotFindCachedCharacter(char *charfile, float skill)
 {
 	int handle;
@@ -375,11 +308,7 @@ int BotFindCachedCharacter(char *charfile, float skill)
 	return 0;
 } //end of the function BotFindCachedCharacter
 //===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//===========================================================================
+// Skills log as %d: nxdk printf skips %f without reading it, so a later %s would take the double as a pointer.
 int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 {
 	int handle, cachedhandle, intskill;
@@ -402,7 +331,7 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 		cachedhandle = BotFindCachedCharacter(charfile, skill);
 		if (cachedhandle)
 		{
-			botimport.Print(PRT_MESSAGE, "loaded cached skill %f from %s\n", skill, charfile);
+			botimport.Print(PRT_MESSAGE, "loaded cached skill %d from %s\n", (int) skill, charfile);
 			return cachedhandle;
 		} //end if
 	} //end else
@@ -451,7 +380,7 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 		cachedhandle = BotFindCachedCharacter(charfile, -1);
 		if (cachedhandle)
 		{
-			botimport.Print(PRT_MESSAGE, "loaded cached skill %f from %s\n", botcharacters[cachedhandle]->skill, charfile);
+			botimport.Print(PRT_MESSAGE, "loaded cached skill %d from %s\n", (int) botcharacters[cachedhandle]->skill, charfile);
 			return cachedhandle;
 		} //end if
 	} //end if
@@ -460,7 +389,7 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 	if (ch)
 	{
 		botcharacters[handle] = ch;
-		botimport.Print(PRT_MESSAGE, "loaded skill %f from %s\n", ch->skill, charfile);
+		botimport.Print(PRT_MESSAGE, "loaded skill %d from %s\n", (int) ch->skill, charfile);
 		return handle;
 	} //end if
 	//
@@ -470,7 +399,7 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 		cachedhandle = BotFindCachedCharacter(DEFAULT_CHARACTER, -1);
 		if (cachedhandle)
 		{
-			botimport.Print(PRT_MESSAGE, "loaded cached default skill %f from %s\n", botcharacters[cachedhandle]->skill, charfile);
+			botimport.Print(PRT_MESSAGE, "loaded cached default skill %d from %s\n", (int) botcharacters[cachedhandle]->skill, charfile);
 			return cachedhandle;
 		} //end if
 	} //end if
@@ -479,7 +408,7 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 	if (ch)
 	{
 		botcharacters[handle] = ch;
-		botimport.Print(PRT_MESSAGE, "loaded default skill %f from %s\n", ch->skill, charfile);
+		botimport.Print(PRT_MESSAGE, "loaded default skill %d from %s\n", (int) ch->skill, charfile);
 		return handle;
 	} //end if
 	//
@@ -487,11 +416,6 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 	//couldn't load any character
 	return 0;
 } //end of the function BotLoadCachedCharacter
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //===========================================================================
 int BotLoadCharacterSkill(char *charfile, float skill)
 {
@@ -507,11 +431,6 @@ int BotLoadCharacterSkill(char *charfile, float skill)
 
 	return ch;
 } //end of the function BotLoadCharacterSkill
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //===========================================================================
 int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 {
@@ -560,11 +479,6 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 	return handle;
 } //end of the function BotInterpolateCharacters
 //===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//===========================================================================
 int BotLoadCharacter(char *charfile, float skill)
 {
 	int firstskill, secondskill, handle;
@@ -581,7 +495,7 @@ int BotLoadCharacter(char *charfile, float skill)
 	handle = BotFindCachedCharacter(charfile, skill);
 	if (handle)
 	{
-		botimport.Print(PRT_MESSAGE, "loaded cached skill %f from %s\n", skill, charfile);
+		botimport.Print(PRT_MESSAGE, "loaded cached skill %d from %s\n", (int) skill, charfile);
 		return handle;
 	} //end if
 	if (skill < 4.0)
@@ -609,11 +523,6 @@ int BotLoadCharacter(char *charfile, float skill)
 	return handle;
 } //end of the function BotLoadCharacter
 //===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//===========================================================================
 int CheckCharacteristicIndex(int character, int index)
 {
 	bot_character_t *ch;
@@ -632,11 +541,6 @@ int CheckCharacteristicIndex(int character, int index)
 	} //end if
 	return qtrue;
 } //end of the function CheckCharacteristicIndex
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //===========================================================================
 float Characteristic_Float(int character, int index)
 {
@@ -665,11 +569,6 @@ float Characteristic_Float(int character, int index)
 //	return 0;
 } //end of the function Characteristic_Float
 //===========================================================================
-//
-// Parameter:				-
-// Returns:					-
-// Changes Globals:		-
-//===========================================================================
 float Characteristic_BFloat(int character, int index, float min, float max)
 {
 	float value;
@@ -687,11 +586,6 @@ float Characteristic_BFloat(int character, int index, float min, float max)
 	if (value > max) return max;
 	return value;
 } //end of the function Characteristic_BFloat
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //===========================================================================
 int Characteristic_Integer(int character, int index)
 {
@@ -719,11 +613,6 @@ int Characteristic_Integer(int character, int index)
 //	return 0;
 } //end of the function Characteristic_Integer
 //===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//===========================================================================
 int Characteristic_BInteger(int character, int index, int min, int max)
 {
 	int value;
@@ -741,11 +630,6 @@ int Characteristic_BInteger(int character, int index, int min, int max)
 	if (value > max) return max;
 	return value;
 } //end of the function Characteristic_BInteger
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //===========================================================================
 void Characteristic_String(int character, int index, char *buf, int size)
 {
@@ -765,11 +649,6 @@ void Characteristic_String(int character, int index, char *buf, int size)
 		botimport.Print(PRT_ERROR, "characteristic %d is not a string\n", index);
 	} //end else if
 } //end of the function Characteristic_String
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
 //===========================================================================
 void BotShutdownCharacters(void)
 {
