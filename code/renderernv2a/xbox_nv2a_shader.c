@@ -232,7 +232,7 @@ static void XboxShaderReadImage(const char *base, const char *extension,
 }
 
 /* ioq3 rounds non-power-of-two images down (r_roundImagesDown); NV2A swizzle needs it. */
-static int XboxShaderLoadImage(const char *name, qboolean picmip)
+static int XboxShaderLoadImage(const char *name, qboolean picmip, qboolean compress)
 {
 	char base[MAX_QPATH];
 	const char *extension = COM_GetExtension(name);
@@ -287,8 +287,9 @@ static int XboxShaderLoadImage(const char *name, qboolean picmip)
 	}
 	for (i = 0; picmip && i < XBOX_NV2A_PICMIP; ++i)
 		XboxShaderHalveImage(scaled ? scaled : pic, &scaledWidth, &scaledHeight);
-	image = XboxNV2A_CreateImage(base, scaledWidth, scaledHeight,
-		scaled ? scaled : pic, qfalse);
+	/* nopicmip world images stay 16-bit, like the 2D and model ones. */
+	image = XboxNV2A_CreateImage(base, scaledWidth, scaledHeight, scaled ? scaled : pic,
+		compress && picmip ? XBOX_NV2A_IMAGE_DXT1 : XBOX_NV2A_IMAGE_16BIT);
 	free(scaled);
 	ri.Free(pic);
 	return image;
@@ -465,7 +466,7 @@ static void XboxShaderParseAlphaGen(char **text, xboxNV2AStage_t *stage,
 
 /* Reads one stage up to its closing brace; qfalse if the stage cannot be drawn. */
 static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage,
-	xboxNV2AShaderDef_t *def, qboolean picmip)
+	xboxNV2AShaderDef_t *def, qboolean picmip, qboolean compress)
 {
 	char maps[XBOX_NV2A_MAX_ANIM_IMAGES][MAX_QPATH];
 	int numMaps = 0;
@@ -574,7 +575,7 @@ static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage,
 		return qtrue;
 	}
 	for (i = 0; i < numMaps; ++i) {
-		int image = XboxShaderLoadImage(maps[i], picmip);
+		int image = XboxShaderLoadImage(maps[i], picmip, compress);
 
 		if (image)
 			stage->images[stage->numImages++] = image;
@@ -583,7 +584,7 @@ static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage,
 }
 
 /* ioq3 ParseSkyParms; a missing parameter leaves the shader a normal one, as in ioq3. */
-static void XboxShaderParseSkyParms(char **text, xboxNV2AShaderDef_t *def)
+static void XboxShaderParseSkyParms(char **text, xboxNV2AShaderDef_t *def, qboolean compress)
 {
 	static const char *suffixes[XBOX_NV2A_SKY_SIDES] = {"rt", "bk", "lf", "ft", "up", "dn"};
 	char box[MAX_QPATH];
@@ -599,7 +600,7 @@ static void XboxShaderParseSkyParms(char **text, xboxNV2AShaderDef_t *def)
 			char path[MAX_QPATH];
 
 			Com_sprintf(path, sizeof(path), "%s_%s.tga", box, suffixes[i]);
-			def->skyBox[i] = XboxShaderLoadImage(path, qtrue);
+			def->skyBox[i] = XboxShaderLoadImage(path, qtrue, compress);
 		}
 	}
 	token = COM_ParseExt(text, qfalse);
@@ -680,7 +681,7 @@ static float XboxShaderParseSort(const char *token)
 	return atof(token);
 }
 
-static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def)
+static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def, qboolean compress)
 {
 	char *p = body;
 	qboolean sortSet = qfalse;
@@ -693,7 +694,8 @@ static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def)
 			break;
 		if (!strcmp(token, "{")) {
 			if (def->numStages < XBOX_NV2A_MAX_STAGES) {
-				if (XboxShaderParseStage(&p, &def->stages[def->numStages], def, picmip))
+				if (XboxShaderParseStage(&p, &def->stages[def->numStages], def, picmip,
+					compress))
 					def->numStages++;
 			} else if (!SkipBracedSection(&p, 1)) {
 				break;
@@ -706,7 +708,7 @@ static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def)
 			continue;
 		}
 		if (!Q_stricmp(token, "skyParms")) {
-			XboxShaderParseSkyParms(&p, def);
+			XboxShaderParseSkyParms(&p, def, compress);
 			continue;
 		}
 		if (!Q_stricmp(token, "cull")) {
@@ -798,10 +800,10 @@ static void XboxShaderFinishFog(xboxNV2AShaderDef_t *def)
 
 /* ioq3 R_FindShader defaults for LIGHTMAP_2D, LIGHTMAP_NONE, lightmapped and vertex-lit. */
 static void XboxShaderImplicit(const char *name, int flavor,
-	qboolean mipRawImage, xboxNV2AShaderDef_t *def)
+	qboolean mipRawImage, qboolean compress, xboxNV2AShaderDef_t *def)
 {
 	xboxNV2AStage_t *stage = &def->stages[0];
-	int image = XboxShaderLoadImage(name, mipRawImage);
+	int image = XboxShaderLoadImage(name, mipRawImage, compress);
 
 	def->sort = XBOX_NV2A_SORT_OPAQUE;
 	if (!image)
@@ -847,6 +849,8 @@ static qhandle_t XboxShaderRegister(const char *name, int flavor,
 	xboxNV2AShaderDef_t def;
 	xboxShaderText_t *script;
 	qhandle_t handle;
+	/* Only world textures go to DXT1; 2D and model art keep 16-bit detail. */
+	qboolean compress = flavor == XBOX_NV2A_SHADER_LIGHTMAP || flavor == XBOX_NV2A_SHADER_VERTEX;
 
 	if (!name || !*name)
 		return 0;
@@ -862,9 +866,9 @@ static qhandle_t XboxShaderRegister(const char *name, int flavor,
 	def.cull = XBOX_NV2A_CULL_FRONT;
 	script = XboxShaderFindText(stripped);
 	if (script)
-		XboxShaderParse(script->body, &def);
+		XboxShaderParse(script->body, &def, compress);
 	else
-		XboxShaderImplicit(name, flavor, mipRawImage, &def);
+		XboxShaderImplicit(name, flavor, mipRawImage, compress, &def);
 	XboxShaderFinishFog(&def);
 	/* nxdk's vsnprintf has no float conversions, so the sort prints as an integer. */
 	if (def.isSky)

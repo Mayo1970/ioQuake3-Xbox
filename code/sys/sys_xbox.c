@@ -89,11 +89,11 @@ void Sys_XboxMemoryReport(const char *stage)
 	}
 
 	Sys_XboxLog(
-		"Xbox memory %s: physical=%u MiB available=%u MiB "
+		"Xbox memory %s: physical=%u MiB available=%u KiB "
 		"committed=%u MiB reserved=%u MiB image=%u MiB stack=%u KiB\n",
 		stage ? stage : "",
 		(unsigned int)((statistics.TotalPhysicalPages * 4U) / 1024U),
-		(unsigned int)((statistics.AvailablePages * 4U) / 1024U),
+		(unsigned int)(statistics.AvailablePages * 4U),
 		(unsigned int)(statistics.VirtualMemoryBytesCommitted / (1024U * 1024U)),
 		(unsigned int)(statistics.VirtualMemoryBytesReserved / (1024U * 1024U)),
 		(unsigned int)((statistics.ImagePagesCommitted * 4U) / 1024U),

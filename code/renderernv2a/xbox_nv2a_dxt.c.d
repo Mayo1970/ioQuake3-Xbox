@@ -1,5 +1,5 @@
-/work/code/renderernv2a/xbox_nv2a_world.obj: \
-  /work/code/renderernv2a/xbox_nv2a_world.c \
+/work/code/renderernv2a/xbox_nv2a_dxt.obj: \
+  /work/code/renderernv2a/xbox_nv2a_dxt.c \
   /work/code/renderernv2a/xbox_nv2a.h \
   /work/code/renderernv2a/../qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
@@ -30,14 +30,7 @@
   /work/code/renderernv2a/../qcommon/surfaceflags.h \
   /work/code/renderernv2a/../qcommon/qfiles.h \
   /work/code/renderernv2a/../renderercommon/tr_public.h \
-  /work/code/renderernv2a/../renderercommon/tr_types.h \
-  /work/code/renderernv2a/../qcommon/qcommon.h \
-  /work/code/renderernv2a/../qcommon/../qcommon/cm_public.h \
-  /work/code/renderernv2a/../qcommon/../qcommon/qfiles.h \
-  /work/code/renderernv2a/../renderercommon/tr_common.h \
-  /work/code/renderernv2a/../renderercommon/../qcommon/q_shared.h \
-  /work/code/renderernv2a/../renderercommon/../renderercommon/tr_public.h \
-  /work/code/renderernv2a/../sys/sys_xbox.h
+  /work/code/renderernv2a/../renderercommon/tr_types.h
 /work/code/renderernv2a/xbox_nv2a.h:
 /work/code/renderernv2a/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
@@ -69,10 +62,3 @@
 /work/code/renderernv2a/../qcommon/qfiles.h:
 /work/code/renderernv2a/../renderercommon/tr_public.h:
 /work/code/renderernv2a/../renderercommon/tr_types.h:
-/work/code/renderernv2a/../qcommon/qcommon.h:
-/work/code/renderernv2a/../qcommon/../qcommon/cm_public.h:
-/work/code/renderernv2a/../qcommon/../qcommon/qfiles.h:
-/work/code/renderernv2a/../renderercommon/tr_common.h:
-/work/code/renderernv2a/../renderercommon/../qcommon/q_shared.h:
-/work/code/renderernv2a/../renderercommon/../renderercommon/tr_public.h:
-/work/code/renderernv2a/../sys/sys_xbox.h:

@@ -87,21 +87,91 @@ typedef struct {
 } xboxWorld_t;
 
 static xboxWorld_t xboxWorld;
-static const byte *xboxWorldFile;
-static int xboxWorldFileLength;
 
-/* Returns a lump that fits the file and holds whole elements; count gets the element count. */
-static const void *XboxWorldLump(const dheader_t *header, int lump, int elementSize,
-	int *count)
+/* The BSP is read one lump at a time, so no step holds the whole file in hunk temp memory. */
+typedef struct {
+	fileHandle_t file;
+	int length;
+	int position;
+	dheader_t header;
+	/* Lowest Hunk_MemoryRemaining seen during the load, for the budget log. */
+	int lowestFree;
+} xboxWorldStream_t;
+
+/* dsurface_t fields still needed after the drawverts and surfaces lumps are freed. */
+typedef struct {
+	qboolean parsed;
+	int shaderNum;
+	int lightmapNum;
+	int fogNum;
+	int firstIndex;
+} xboxWorldPending_t;
+
+static xboxWorldStream_t xboxWorldStream;
+static xboxWorldPending_t *xboxWorldPending;
+
+/* XboxNV2AWorld_Free runs this too; the renderer shutdown after an ERR_DROP reaches it. */
+static void XboxWorldEndLoad(void)
 {
-	const lump_t *l = &header->lumps[lump];
+	if (xboxWorldStream.file)
+		FS_FCloseFile(xboxWorldStream.file);
+	xboxWorldStream.file = 0;
+	free(xboxWorldPending);
+	xboxWorldPending = NULL;
+}
 
-	if (l->fileofs < 0 || l->filelen < 0 || l->fileofs > xboxWorldFileLength ||
-		l->filelen > xboxWorldFileLength - l->fileofs || l->filelen % elementSize)
+static void XboxWorldNoteFree(void)
+{
+	int remaining = Hunk_MemoryRemaining();
+
+	if (remaining < xboxWorldStream.lowestFree)
+		xboxWorldStream.lowestFree = remaining;
+}
+
+/* Returns the element count of a lump that fits the file and holds whole elements. */
+static int XboxWorldLumpCount(int lump, int elementSize)
+{
+	const lump_t *l = &xboxWorldStream.header.lumps[lump];
+
+	if (l->fileofs < 0 || l->filelen < 0 || l->fileofs > xboxWorldStream.length ||
+		l->filelen > xboxWorldStream.length - l->fileofs || l->filelen % elementSize)
 		ri.Error(ERR_DROP, "RE_LoadWorldMap: lump %d is corrupt in %s", lump,
 			xboxWorld.name);
-	*count = l->filelen / elementSize;
-	return xboxWorldFile + l->fileofs;
+	return l->filelen / elementSize;
+}
+
+/* A pk3 FS_SEEK_SET inflates again from the file start, so forward moves skip from here. */
+static void XboxWorldRead(int offset, void *buffer, int bytes)
+{
+	xboxWorldStream_t *stream = &xboxWorldStream;
+
+	if (offset > stream->position)
+		FS_Seek(stream->file, offset - stream->position, FS_SEEK_CUR);
+	else if (offset < stream->position)
+		FS_Seek(stream->file, offset, FS_SEEK_SET);
+	stream->position = offset;
+	if (bytes > 0 && FS_Read(buffer, bytes, stream->file) != bytes)
+		ri.Error(ERR_DROP, "RE_LoadWorldMap: short read in %s", xboxWorld.name);
+	stream->position += bytes;
+}
+
+/* Hunk temp memory is a stack: free lumps in the reverse order of reading. */
+static void *XboxWorldReadLump(int lump, int elementSize, int *count)
+{
+	const lump_t *l = &xboxWorldStream.header.lumps[lump];
+	void *data;
+
+	*count = XboxWorldLumpCount(lump, elementSize);
+	data = ri.Hunk_AllocateTempMemory(l->filelen);
+	XboxWorldRead(l->fileofs, data, l->filelen);
+	XboxWorldNoteFree();
+	return data;
+}
+
+static void XboxWorldFreeLump(void *data)
+{
+	XboxWorldNoteFree();
+	ri.Hunk_FreeTempMemory(data);
 }
 
 /* ioq3 R_ColorShiftLightingBytes: scale up, then normalise by the brightest channel. */
@@ -145,15 +215,16 @@ static void XboxWorldSurfaceBounds(xboxNV2AWorldSurface_t *surface)
 		AddPointToBounds(surface->verts[i].xyz, surface->bounds[0], surface->bounds[1]);
 }
 
-static void XboxWorldLoadLightmaps(const dheader_t *header)
+/* Reads one lightmap at a time, so the lump is never in memory whole. */
+static void XboxWorldLoadLightmaps(void)
 {
 	const int lightmapBytes = LIGHTMAP_WIDTH * LIGHTMAP_HEIGHT * 3;
-	const byte *data;
+	const lump_t *l = &xboxWorldStream.header.lumps[LUMP_LIGHTMAPS];
+	byte *source;
 	byte *rgba;
-	int bytes, count, i, j;
+	int count, i, j;
 
-	data = (const byte *)XboxWorldLump(header, LUMP_LIGHTMAPS, 1, &bytes);
-	count = bytes / lightmapBytes;
+	count = XboxWorldLumpCount(LUMP_LIGHTMAPS, 1) / lightmapBytes;
 	if (count > XBOX_WORLD_MAX_LIGHTMAPS) {
 		Sys_XboxLog("Xbox world: %d lightmaps, only %d kept\n", count,
 			XBOX_WORLD_MAX_LIGHTMAPS);
@@ -161,35 +232,32 @@ static void XboxWorldLoadLightmaps(const dheader_t *header)
 	}
 	if (!count)
 		return;
-	rgba = (byte *)malloc(LIGHTMAP_WIDTH * LIGHTMAP_HEIGHT * 4);
-	if (!rgba)
-		ri.Error(ERR_DROP, "RE_LoadWorldMap: no memory for lightmaps");
+	source = (byte *)ri.Hunk_AllocateTempMemory(lightmapBytes);
+	rgba = (byte *)ri.Hunk_AllocateTempMemory(LIGHTMAP_WIDTH * LIGHTMAP_HEIGHT * 4);
 	for (i = 0; i < count; ++i) {
-		const byte *source = data + (size_t)i * lightmapBytes;
 		char name[MAX_QPATH];
 
+		XboxWorldRead(l->fileofs + i * lightmapBytes, source, lightmapBytes);
 		for (j = 0; j < LIGHTMAP_WIDTH * LIGHTMAP_HEIGHT; ++j) {
 			XboxWorldShiftColor(source + j * 3, rgba + j * 4);
 			rgba[j * 4 + 3] = 255;
 		}
 		Com_sprintf(name, sizeof(name), "*lightmap%d", i);
 		xboxWorld.lightmaps[i] = XboxNV2A_CreateImage(name, LIGHTMAP_WIDTH,
-			LIGHTMAP_HEIGHT, rgba, qtrue);
+			LIGHTMAP_HEIGHT, rgba, XBOX_NV2A_IMAGE_32BIT);
 	}
-	free(rgba);
+	XboxWorldFreeLump(rgba);
+	XboxWorldFreeLump(source);
 	xboxWorld.numLightmaps = count;
 }
 
-static void XboxWorldLoadPlanes(const dheader_t *header)
+static void XboxWorldLoadPlanes(const dplane_t *in, int count)
 {
-	const dplane_t *in;
 	int i;
 
-	in = (const dplane_t *)XboxWorldLump(header, LUMP_PLANES, sizeof(dplane_t),
-		&xboxWorld.numPlanes);
-	xboxWorld.planes = (cplane_t *)ri.Hunk_Alloc(xboxWorld.numPlanes * sizeof(cplane_t),
-		h_low);
-	for (i = 0; i < xboxWorld.numPlanes; ++i) {
+	xboxWorld.numPlanes = count;
+	xboxWorld.planes = (cplane_t *)ri.Hunk_Alloc(count * sizeof(cplane_t), h_low);
+	for (i = 0; i < count; ++i) {
 		cplane_t *out = &xboxWorld.planes[i];
 
 		VectorCopy(in[i].normal, out->normal);
@@ -199,28 +267,18 @@ static void XboxWorldLoadPlanes(const dheader_t *header)
 	}
 }
 
-/* ioq3 R_LoadFogs: fog 0 means none; the bounds come from the brush's six axial sides. */
-static void XboxWorldLoadFogs(const dheader_t *header)
+/* ioq3 R_LoadFogs geometry: fog 0 means none; the bounds come from the brush's six axial sides. */
+static void XboxWorldLoadFogVolumes(const dfog_t *fogs, int count, const dbrush_t *brushes,
+	int numBrushes, const dbrushside_t *sides, int numSides)
 {
-	const dfog_t *fogs;
-	const dbrush_t *brushes;
-	const dbrushside_t *sides;
-	int count, numBrushes, numSides, i, k;
+	int i, k;
 
-	fogs = (const dfog_t *)XboxWorldLump(header, LUMP_FOGS, sizeof(dfog_t), &count);
-	brushes = (const dbrush_t *)XboxWorldLump(header, LUMP_BRUSHES, sizeof(dbrush_t),
-		&numBrushes);
-	sides = (const dbrushside_t *)XboxWorldLump(header, LUMP_BRUSHSIDES, sizeof(dbrushside_t),
-		&numSides);
 	xboxWorld.numFogs = count + 1;
 	xboxWorld.fogs = (xboxNV2AFog_t *)ri.Hunk_Alloc(xboxWorld.numFogs *
 		sizeof(*xboxWorld.fogs), h_low);
 	for (i = 0; i < count; ++i) {
 		xboxNV2AFog_t *out = &xboxWorld.fogs[i + 1];
 		const dbrush_t *brush;
-		char name[MAX_QPATH];
-		vec3_t color;
-		float depth;
 		int firstSide, side;
 
 		if (fogs[i].brushNum < 0 || fogs[i].brushNum >= numBrushes)
@@ -239,13 +297,6 @@ static void XboxWorldLoadFogs(const dheader_t *header)
 			out->bounds[0][k] = -xboxWorld.planes[sides[firstSide + k * 2].planeNum].dist;
 			out->bounds[1][k] = xboxWorld.planes[sides[firstSide + k * 2 + 1].planeNum].dist;
 		}
-		Q_strncpyz(name, fogs[i].shader, sizeof(name));
-		XboxNV2A_ShaderFogParms(XboxNV2AShader_RegisterWorld(name, XBOX_NV2A_SHADER_VERTEX),
-			color, &depth);
-		for (k = 0; k < 3; ++k)
-			out->color[k] = (byte)(255 * Com_Clamp(0.0f, 1.0f, color[k]));
-		out->color[3] = 255;
-		out->tcScale = 1.0f / ((depth < 1.0f ? 1.0f : depth) * 8);
 		/* The visible side's plane, turned to face into the fog. */
 		side = fogs[i].visibleSide;
 		if (side < 0 || firstSide + side >= numSides || sides[firstSide + side].planeNum < 0 ||
@@ -261,9 +312,30 @@ static void XboxWorldLoadFogs(const dheader_t *header)
 	}
 }
 
-/* Copies the vertices and triangle indexes of a planar face or a triangle soup. */
+/* ioq3 R_LoadFogs colour and depth, from the fog shader's fogParms. */
+static void XboxWorldRegisterFogs(const dfog_t *fogs, int count)
+{
+	int i, k;
+
+	for (i = 0; i < count; ++i) {
+		xboxNV2AFog_t *out = &xboxWorld.fogs[i + 1];
+		char name[MAX_QPATH];
+		vec3_t color;
+		float depth;
+
+		Q_strncpyz(name, fogs[i].shader, sizeof(name));
+		XboxNV2A_ShaderFogParms(XboxNV2AShader_RegisterWorld(name, XBOX_NV2A_SHADER_VERTEX),
+			color, &depth);
+		for (k = 0; k < 3; ++k)
+			out->color[k] = (byte)(255 * Com_Clamp(0.0f, 1.0f, color[k]));
+		out->color[3] = 255;
+		out->tcScale = 1.0f / ((depth < 1.0f ? 1.0f : depth) * 8);
+	}
+}
+
+/* Copies a planar face's or triangle soup's vertices; the indexes come with the drawindexes lump. */
 static qboolean XboxWorldParseTriangles(const dsurface_t *ds, const drawVert_t *verts,
-	int numVerts, const int *indexes, int numIndexes, xboxNV2AWorldSurface_t *surface)
+	int numVerts, int numIndexes, xboxNV2AWorldSurface_t *surface)
 {
 	int i;
 
@@ -273,10 +345,6 @@ static qboolean XboxWorldParseTriangles(const dsurface_t *ds, const drawVert_t *
 		ds->numIndexes > numIndexes - ds->firstIndex ||
 		ds->numVerts > XBOX_NV2A_TESS_VERTS || ds->numIndexes > XBOX_NV2A_TESS_INDEXES)
 		return qfalse;
-	for (i = 0; i < ds->numIndexes; ++i) {
-		if ((unsigned int)indexes[ds->firstIndex + i] >= (unsigned int)ds->numVerts)
-			return qfalse;
-	}
 	surface->numVerts = ds->numVerts;
 	surface->numIndexes = ds->numIndexes;
 	surface->verts = (xboxNV2AWorldVert_t *)ri.Hunk_Alloc(surface->numVerts *
@@ -285,8 +353,6 @@ static qboolean XboxWorldParseTriangles(const dsurface_t *ds, const drawVert_t *
 		sizeof(*surface->indexes), h_low);
 	for (i = 0; i < surface->numVerts; ++i)
 		XboxWorldCopyVert(&verts[ds->firstVert + i], &surface->verts[i]);
-	for (i = 0; i < surface->numIndexes; ++i)
-		surface->indexes[i] = (unsigned short)indexes[ds->firstIndex + i];
 	XboxWorldSurfaceBounds(surface);
 	return qtrue;
 }
@@ -426,39 +492,31 @@ static int XboxWorldShader(const dshader_t *shaders, int numShaders, int shaderN
 	return XboxNV2AShader_RegisterWorld(name, flavor);
 }
 
-static void XboxWorldLoadSurfaces(const dheader_t *header)
+/* ioq3 R_LoadSurfaces geometry; shaders, lightmaps and fogs are resolved once the lumps are freed. */
+static void XboxWorldLoadSurfaces(const drawVert_t *verts, int numVerts, const dsurface_t *in,
+	int count)
 {
-	const dshader_t *shaders;
-	const drawVert_t *verts;
-	const int *indexes;
-	const dsurface_t *in;
-	int numShaders, numVerts, numIndexes;
-	int counts[4] = {0, 0, 0, 0};
+	int numIndexes = XboxWorldLumpCount(LUMP_DRAWINDEXES, sizeof(int));
 	int i;
 
-	shaders = (const dshader_t *)XboxWorldLump(header, LUMP_SHADERS, sizeof(dshader_t),
-		&numShaders);
-	verts = (const drawVert_t *)XboxWorldLump(header, LUMP_DRAWVERTS, sizeof(drawVert_t),
-		&numVerts);
-	indexes = (const int *)XboxWorldLump(header, LUMP_DRAWINDEXES, sizeof(int), &numIndexes);
-	in = (const dsurface_t *)XboxWorldLump(header, LUMP_SURFACES, sizeof(dsurface_t),
-		&xboxWorld.numSurfaces);
-	xboxWorld.surfaces = (xboxNV2AWorldSurface_t *)ri.Hunk_Alloc(xboxWorld.numSurfaces *
+	xboxWorld.numSurfaces = count;
+	xboxWorld.surfaces = (xboxNV2AWorldSurface_t *)ri.Hunk_Alloc(count *
 		sizeof(*xboxWorld.surfaces), h_low);
+	xboxWorldPending = (xboxWorldPending_t *)calloc((size_t)(count ? count : 1),
+		sizeof(*xboxWorldPending));
+	if (!xboxWorldPending)
+		ri.Error(ERR_DROP, "RE_LoadWorldMap: no memory for %d surfaces", count);
 
-	for (i = 0; i < xboxWorld.numSurfaces; ++i) {
+	for (i = 0; i < count; ++i) {
 		const dsurface_t *ds = &in[i];
 		xboxNV2AWorldSurface_t *surface = &xboxWorld.surfaces[i];
-		qboolean lit = ds->lightmapNum >= 0 && ds->lightmapNum < xboxWorld.numLightmaps;
-		/* ioq3 R_FindShader: a missing lightmap falls back to vertex lighting. */
-		int flavor = lit ? XBOX_NV2A_SHADER_LIGHTMAP : XBOX_NV2A_SHADER_VERTEX;
-		qboolean parsed = qfalse;
+		xboxWorldPending_t *pending = &xboxWorldPending[i];
 
 		switch (ds->surfaceType) {
 		case MST_PLANAR:
 			surface->type = XBOX_NV2A_SURFACE_FACE;
-			parsed = XboxWorldParseTriangles(ds, verts, numVerts, indexes, numIndexes, surface);
-			if (parsed) {
+			pending->parsed = XboxWorldParseTriangles(ds, verts, numVerts, numIndexes, surface);
+			if (pending->parsed) {
 				VectorCopy(ds->lightmapVecs[2], surface->plane.normal);
 				surface->plane.dist = DotProduct(surface->verts[0].xyz, surface->plane.normal);
 				surface->plane.type = PlaneTypeForNormal(surface->plane.normal);
@@ -467,44 +525,86 @@ static void XboxWorldLoadSurfaces(const dheader_t *header)
 			break;
 		case MST_PATCH:
 			surface->type = XBOX_NV2A_SURFACE_GRID;
-			parsed = XboxWorldParsePatch(ds, verts, numVerts, surface);
+			pending->parsed = XboxWorldParsePatch(ds, verts, numVerts, surface);
 			break;
 		case MST_TRIANGLE_SOUP:
 			surface->type = XBOX_NV2A_SURFACE_TRIANGLES;
-			flavor = XBOX_NV2A_SHADER_VERTEX;
-			lit = qfalse;
-			parsed = XboxWorldParseTriangles(ds, verts, numVerts, indexes, numIndexes, surface);
+			pending->parsed = XboxWorldParseTriangles(ds, verts, numVerts, numIndexes, surface);
 			break;
 		default:
 			break;
 		}
-		if (!parsed)
+		pending->shaderNum = ds->shaderNum;
+		pending->lightmapNum = ds->lightmapNum;
+		pending->fogNum = ds->fogNum;
+		pending->firstIndex = ds->firstIndex;
+	}
+}
+
+/* Face and soup indexes; one outside its surface's vertices drops the surface, as ioq3 would crash. */
+static void XboxWorldLoadIndexes(const int *indexes)
+{
+	int i, j;
+
+	for (i = 0; i < xboxWorld.numSurfaces; ++i) {
+		xboxNV2AWorldSurface_t *surface = &xboxWorld.surfaces[i];
+		xboxWorldPending_t *pending = &xboxWorldPending[i];
+		const int *in;
+
+		if (!pending->parsed || surface->type == XBOX_NV2A_SURFACE_GRID)
+			continue;
+		in = indexes + pending->firstIndex;
+		for (j = 0; j < surface->numIndexes; ++j) {
+			if ((unsigned int)in[j] >= (unsigned int)surface->numVerts) {
+				pending->parsed = qfalse;
+				surface->numVerts = 0;
+				surface->numIndexes = 0;
+				break;
+			}
+			surface->indexes[j] = (unsigned short)in[j];
+		}
+	}
+}
+
+/* ioq3 R_LoadSurfaces shader step; a triangle soup is always vertex lit. */
+static void XboxWorldRegisterSurfaces(const dshader_t *shaders, int numShaders)
+{
+	int counts[4] = {0, 0, 0, 0};
+	int i;
+
+	for (i = 0; i < xboxWorld.numSurfaces; ++i) {
+		xboxNV2AWorldSurface_t *surface = &xboxWorld.surfaces[i];
+		const xboxWorldPending_t *pending = &xboxWorldPending[i];
+		/* ioq3 R_FindShader: a missing lightmap falls back to vertex lighting. */
+		qboolean lit = surface->type != XBOX_NV2A_SURFACE_TRIANGLES &&
+			pending->lightmapNum >= 0 && pending->lightmapNum < xboxWorld.numLightmaps;
+
+		if (!pending->parsed)
 			continue;
 		counts[surface->type]++;
 		counts[3] += surface->numVerts;
-		surface->shader = XboxWorldShader(shaders, numShaders, ds->shaderNum, flavor);
-		surface->lightmap = lit ? xboxWorld.lightmaps[ds->lightmapNum] : 0;
-		surface->fogIndex = ds->fogNum >= 0 && ds->fogNum + 1 < xboxWorld.numFogs ?
-			ds->fogNum + 1 : 0;
+		surface->shader = XboxWorldShader(shaders, numShaders, pending->shaderNum,
+			lit ? XBOX_NV2A_SHADER_LIGHTMAP : XBOX_NV2A_SHADER_VERTEX);
+		surface->lightmap = lit ? xboxWorld.lightmaps[pending->lightmapNum] : 0;
+		surface->fogIndex = pending->fogNum >= 0 && pending->fogNum + 1 < xboxWorld.numFogs ?
+			pending->fogNum + 1 : 0;
 		/* ioq3 reads the shader's surfaceparms; q3map stores the same flags in the BSP. */
-		surface->noMarks = (shaders[ds->shaderNum].surfaceFlags &
+		surface->noMarks = (shaders[pending->shaderNum].surfaceFlags &
 			(SURF_NOIMPACT | SURF_NOMARKS | SURF_NODRAW)) ||
-			(shaders[ds->shaderNum].contentFlags & CONTENTS_FOG);
+			(shaders[pending->shaderNum].contentFlags & CONTENTS_FOG);
 	}
 	Sys_XboxLog("Xbox world: %d surfaces: faces=%d patches=%d soups=%d verts=%d\n",
 		xboxWorld.numSurfaces, counts[XBOX_NV2A_SURFACE_FACE],
 		counts[XBOX_NV2A_SURFACE_GRID], counts[XBOX_NV2A_SURFACE_TRIANGLES], counts[3]);
 }
 
-static void XboxWorldLoadMarks(const dheader_t *header)
+static void XboxWorldLoadMarks(const int *in, int count)
 {
-	const int *in;
 	int i;
 
-	in = (const int *)XboxWorldLump(header, LUMP_LEAFSURFACES, sizeof(int),
-		&xboxWorld.numMarks);
-	xboxWorld.marks = (int *)ri.Hunk_Alloc(xboxWorld.numMarks * sizeof(int), h_low);
-	for (i = 0; i < xboxWorld.numMarks; ++i) {
+	xboxWorld.numMarks = count;
+	xboxWorld.marks = (int *)ri.Hunk_Alloc(count * sizeof(int), h_low);
+	for (i = 0; i < count; ++i) {
 		if (in[i] < 0 || in[i] >= xboxWorld.numSurfaces)
 			ri.Error(ERR_DROP, "RE_LoadWorldMap: bad leaf surface %d", in[i]);
 		xboxWorld.marks[i] = in[i];
@@ -520,24 +620,20 @@ static void XboxWorldSetParent(xboxWorldNode_t *node, xboxWorldNode_t *parent)
 	XboxWorldSetParent(node->children[1], node);
 }
 
-/* ioq3 R_LoadNodesAndLeafs: leafs follow the decision nodes in one array. */
-static void XboxWorldLoadNodes(const dheader_t *header)
+/* ioq3 R_LoadNodesAndLeafs: leafs follow the decision nodes in one array; numMarks is preset. */
+static void XboxWorldLoadNodes(const dnode_t *inNodes, int numDecisionNodes,
+	const dleaf_t *inLeafs, int numLeafs)
 {
-	const dnode_t *inNodes;
-	const dleaf_t *inLeafs;
-	int numLeafs;
 	int i, j;
 
-	inNodes = (const dnode_t *)XboxWorldLump(header, LUMP_NODES, sizeof(dnode_t),
-		&xboxWorld.numDecisionNodes);
-	inLeafs = (const dleaf_t *)XboxWorldLump(header, LUMP_LEAFS, sizeof(dleaf_t), &numLeafs);
-	if (!xboxWorld.numDecisionNodes || !numLeafs)
+	if (!numDecisionNodes || !numLeafs)
 		ri.Error(ERR_DROP, "RE_LoadWorldMap: %s has no nodes", xboxWorld.name);
-	xboxWorld.numNodes = xboxWorld.numDecisionNodes + numLeafs;
+	xboxWorld.numDecisionNodes = numDecisionNodes;
+	xboxWorld.numNodes = numDecisionNodes + numLeafs;
 	xboxWorld.nodes = (xboxWorldNode_t *)ri.Hunk_Alloc(xboxWorld.numNodes *
 		sizeof(*xboxWorld.nodes), h_low);
 
-	for (i = 0; i < xboxWorld.numDecisionNodes; ++i) {
+	for (i = 0; i < numDecisionNodes; ++i) {
 		const dnode_t *in = &inNodes[i];
 		xboxWorldNode_t *out = &xboxWorld.nodes[i];
 
@@ -552,15 +648,15 @@ static void XboxWorldLoadNodes(const dheader_t *header)
 		for (j = 0; j < 2; ++j) {
 			int child = in->children[j];
 
-			if (child >= 0 ? child >= xboxWorld.numDecisionNodes : -1 - child >= numLeafs)
+			if (child >= 0 ? child >= numDecisionNodes : -1 - child >= numLeafs)
 				ri.Error(ERR_DROP, "RE_LoadWorldMap: bad node child %d", child);
 			out->children[j] = child >= 0 ? &xboxWorld.nodes[child] :
-				&xboxWorld.nodes[xboxWorld.numDecisionNodes + (-1 - child)];
+				&xboxWorld.nodes[numDecisionNodes + (-1 - child)];
 		}
 	}
 	for (i = 0; i < numLeafs; ++i) {
 		const dleaf_t *in = &inLeafs[i];
-		xboxWorldNode_t *out = &xboxWorld.nodes[xboxWorld.numDecisionNodes + i];
+		xboxWorldNode_t *out = &xboxWorld.nodes[numDecisionNodes + i];
 
 		for (j = 0; j < 3; ++j) {
 			out->mins[j] = (float)in->mins[j];
@@ -580,19 +676,17 @@ static void XboxWorldLoadNodes(const dheader_t *header)
 	XboxWorldSetParent(xboxWorld.nodes, NULL);
 }
 
-/* ioq3 R_LoadSubmodels; model 0 is the world itself. */
-static void XboxWorldLoadSubmodels(const dheader_t *header)
+/* ioq3 R_LoadSubmodels; model 0 is the world itself, and numSurfaces is preset. */
+static void XboxWorldLoadSubmodels(const dmodel_t *in, int count)
 {
-	const dmodel_t *in;
 	int i;
 
-	in = (const dmodel_t *)XboxWorldLump(header, LUMP_MODELS, sizeof(dmodel_t),
-		&xboxWorld.numModels);
-	if (!xboxWorld.numModels)
+	if (!count)
 		ri.Error(ERR_DROP, "RE_LoadWorldMap: %s has no models", xboxWorld.name);
-	xboxWorld.models = (xboxWorldModel_t *)ri.Hunk_Alloc(xboxWorld.numModels *
-		sizeof(*xboxWorld.models), h_low);
-	for (i = 0; i < xboxWorld.numModels; ++i) {
+	xboxWorld.numModels = count;
+	xboxWorld.models = (xboxWorldModel_t *)ri.Hunk_Alloc(count * sizeof(*xboxWorld.models),
+		h_low);
+	for (i = 0; i < count; ++i) {
 		xboxWorldModel_t *out = &xboxWorld.models[i];
 
 		VectorCopy(in[i].mins, out->bounds[0]);
@@ -612,28 +706,24 @@ static void XboxWorldLoadSubmodels(const dheader_t *header)
 	}
 }
 
-/* The collision map owns the PVS rows (ri.CM_ClusterPVS), so only the header is read. */
-static void XboxWorldLoadVisibility(const dheader_t *header)
+/* The collision map owns the PVS rows (ri.CM_ClusterPVS), so only the cluster count is read. */
+static int XboxWorldReadVisibility(void)
 {
-	const int *vis;
-	int bytes;
+	const lump_t *l = &xboxWorldStream.header.lumps[LUMP_VISIBILITY];
+	int vis[2];
 
-	vis = (const int *)XboxWorldLump(header, LUMP_VISIBILITY, 1, &bytes);
-	if (bytes < 8)
-		return;
-	xboxWorld.numClusters = vis[0];
-	xboxWorld.vised = qtrue;
+	if (XboxWorldLumpCount(LUMP_VISIBILITY, 1) < (int)sizeof(vis))
+		return -1;
+	XboxWorldRead(l->fileofs, vis, sizeof(vis));
+	return vis[0];
 }
 
 /* ioq3 R_LoadEntities keeps the string for GetEntityToken and reads worldspawn's gridsize. */
-static void XboxWorldLoadEntities(const dheader_t *header)
+static void XboxWorldLoadEntities(const char *in, int bytes)
 {
-	const char *in;
 	char *p;
 	char *token;
-	int bytes;
 
-	in = (const char *)XboxWorldLump(header, LUMP_ENTITIES, 1, &bytes);
 	xboxWorld.entityString = (char *)ri.Hunk_Alloc(bytes + 1, h_low);
 	memcpy(xboxWorld.entityString, in, (size_t)bytes);
 	xboxWorld.entityString[bytes] = '\0';
@@ -667,14 +757,12 @@ static void XboxWorldLoadEntities(const dheader_t *header)
 }
 
 /* ioq3 R_LoadLightGrid: the grid spans the world model bounds in gridSize steps. */
-static void XboxWorldLoadLightGrid(const dheader_t *header)
+static void XboxWorldLoadLightGrid(const byte *data, int bytes)
 {
-	const byte *data;
 	const float *mins = xboxWorld.models[0].bounds[0];
 	const float *maxs = xboxWorld.models[0].bounds[1];
-	int bytes, points, i;
+	int points, i;
 
-	data = (const byte *)XboxWorldLump(header, LUMP_LIGHTGRID, 1, &bytes);
 	for (i = 0; i < 3; ++i) {
 		float top;
 
@@ -703,62 +791,113 @@ static void XboxWorldLoadLightGrid(const dheader_t *header)
 	}
 }
 
-/* ioq3 RE_LoadWorldMap. */
+/* ioq3 RE_LoadWorldMap in BSP file order, then one rewind for the early nodes, brushes and marks. */
 void XboxNV2AWorld_Load(const char *name)
 {
-	const dheader_t *header;
-	void *buffer = NULL;
-	int length;
+	xboxWorldStream_t *stream = &xboxWorldStream;
+	void *shaders, *fogs, *first, *second;
+	int numShaders, numFogs, count, secondCount;
+	int visClusters;
 
 	if (xboxWorld.loaded) {
 		Sys_XboxLog("Xbox world: %s is already loaded\n", xboxWorld.name);
 		return;
 	}
+	XboxWorldEndLoad();
 	memset(&xboxWorld, 0, sizeof(xboxWorld));
+	memset(stream, 0, sizeof(*stream));
 	Q_strncpyz(xboxWorld.name, name, sizeof(xboxWorld.name));
-	length = ri.FS_ReadFile(name, &buffer);
-	if (length <= 0 || !buffer)
+	/* A private pk3 handle, as ioq3's streamed sounds use: the shared one moves with other reads. */
+	stream->length = (int)FS_FOpenFileRead(name, &stream->file, qtrue);
+	if (!stream->file || stream->length <= 0)
 		ri.Error(ERR_DROP, "RE_LoadWorldMap: %s not found", name);
-	header = (const dheader_t *)buffer;
-	if (length < (int)sizeof(*header) || header->ident != BSP_IDENT ||
-		header->version != BSP_VERSION) {
-		ri.FS_FreeFile(buffer);
+	stream->lowestFree = Hunk_MemoryRemaining();
+	if (stream->length < (int)sizeof(stream->header))
 		ri.Error(ERR_DROP, "RE_LoadWorldMap: %s is not a version %d BSP", name, BSP_VERSION);
-	}
-	xboxWorldFile = (const byte *)buffer;
-	xboxWorldFileLength = length;
+	XboxWorldRead(0, &stream->header, sizeof(stream->header));
+	if (stream->header.ident != BSP_IDENT || stream->header.version != BSP_VERSION)
+		ri.Error(ERR_DROP, "RE_LoadWorldMap: %s is not a version %d BSP", name, BSP_VERSION);
 	VectorSet(xboxWorld.gridSize, 64.0f, 64.0f, 128.0f);
+	xboxWorld.numSurfaces = XboxWorldLumpCount(LUMP_SURFACES, sizeof(dsurface_t));
+	xboxWorld.numMarks = XboxWorldLumpCount(LUMP_LEAFSURFACES, sizeof(int));
 
-	XboxWorldLoadLightmaps(header);
-	XboxWorldLoadPlanes(header);
-	XboxWorldLoadFogs(header);
-	XboxWorldLoadSurfaces(header);
-	XboxWorldLoadMarks(header);
-	XboxWorldLoadNodes(header);
-	XboxWorldLoadSubmodels(header);
-	XboxWorldLoadVisibility(header);
-	XboxWorldLoadEntities(header);
-	XboxWorldLoadLightGrid(header);
+	shaders = XboxWorldReadLump(LUMP_SHADERS, sizeof(dshader_t), &numShaders);
+	first = XboxWorldReadLump(LUMP_PLANES, sizeof(dplane_t), &count);
+	XboxWorldLoadPlanes((const dplane_t *)first, count);
+	XboxWorldFreeLump(first);
+	first = XboxWorldReadLump(LUMP_MODELS, sizeof(dmodel_t), &count);
+	XboxWorldLoadSubmodels((const dmodel_t *)first, count);
+	XboxWorldFreeLump(first);
+	/* The load's peak: both lumps plus the surfaces built from them. */
+	first = XboxWorldReadLump(LUMP_DRAWVERTS, sizeof(drawVert_t), &count);
+	second = XboxWorldReadLump(LUMP_SURFACES, sizeof(dsurface_t), &secondCount);
+	XboxWorldLoadSurfaces((const drawVert_t *)first, count, (const dsurface_t *)second,
+		secondCount);
+	XboxWorldFreeLump(second);
+	XboxWorldFreeLump(first);
+	visClusters = XboxWorldReadVisibility();
+	XboxWorldLoadLightmaps();
+	first = XboxWorldReadLump(LUMP_LIGHTGRID, 1, &count);
+	second = XboxWorldReadLump(LUMP_ENTITIES, 1, &secondCount);
+	XboxWorldLoadEntities((const char *)second, secondCount);
+	XboxWorldFreeLump(second);
+	XboxWorldLoadLightGrid((const byte *)first, count);
+	XboxWorldFreeLump(first);
+	fogs = XboxWorldReadLump(LUMP_FOGS, sizeof(dfog_t), &numFogs);
+	first = XboxWorldReadLump(LUMP_DRAWINDEXES, sizeof(int), &count);
+	XboxWorldLoadIndexes((const int *)first);
+	XboxWorldFreeLump(first);
+
+	first = XboxWorldReadLump(LUMP_LEAFS, sizeof(dleaf_t), &count);
+	second = XboxWorldReadLump(LUMP_NODES, sizeof(dnode_t), &secondCount);
+	XboxWorldLoadNodes((const dnode_t *)second, secondCount, (const dleaf_t *)first, count);
+	XboxWorldFreeLump(second);
+	XboxWorldFreeLump(first);
+	/* As ioq3's R_LoadVisibility after the leafs: the vis header's count wins. */
+	if (visClusters >= 0) {
+		xboxWorld.numClusters = visClusters;
+		xboxWorld.vised = qtrue;
+	}
+	if (numFogs) {
+		first = XboxWorldReadLump(LUMP_BRUSHES, sizeof(dbrush_t), &count);
+		second = XboxWorldReadLump(LUMP_BRUSHSIDES, sizeof(dbrushside_t), &secondCount);
+		XboxWorldLoadFogVolumes((const dfog_t *)fogs, numFogs, (const dbrush_t *)first, count,
+			(const dbrushside_t *)second, secondCount);
+		XboxWorldFreeLump(second);
+		XboxWorldFreeLump(first);
+	} else {
+		XboxWorldLoadFogVolumes(NULL, 0, NULL, 0, NULL, 0);
+	}
+	first = XboxWorldReadLump(LUMP_LEAFSURFACES, sizeof(int), &count);
+	XboxWorldLoadMarks((const int *)first, count);
+	XboxWorldFreeLump(first);
+	FS_FCloseFile(stream->file);
+	stream->file = 0;
+
+	/* Shader images load through hunk temp memory too, so they wait for the big lumps to go. */
+	XboxWorldRegisterFogs((const dfog_t *)fogs, numFogs);
+	XboxWorldRegisterSurfaces((const dshader_t *)shaders, numShaders);
+	XboxWorldFreeLump(fogs);
+	XboxWorldFreeLump(shaders);
+	XboxWorldEndLoad();
 	/* ioq3 default sun direction, used for entity light without a light grid. */
 	VectorSet(xboxWorld.sunDirection, 0.45f, 0.3f, 0.9f);
 	VectorNormalize(xboxWorld.sunDirection);
 
-	ri.FS_FreeFile(buffer);
-	xboxWorldFile = NULL;
-	xboxWorldFileLength = 0;
 	xboxWorld.loaded = qtrue;
 	Sys_XboxLog("Xbox world: %s lightmaps=%d leafs=%d clusters=%d vis=%d grid=%dx%dx%d "
-		"models=%d hunk_free=%d KiB\n", name, xboxWorld.numLightmaps,
+		"models=%d hunk_free=%d KiB lowest=%d KiB\n", name, xboxWorld.numLightmaps,
 		xboxWorld.numNodes - xboxWorld.numDecisionNodes, xboxWorld.numClusters,
 		xboxWorld.vised, xboxWorld.lightGrid ? xboxWorld.gridBounds[0] : 0,
 		xboxWorld.gridBounds[1], xboxWorld.gridBounds[2], xboxWorld.numModels,
-		Hunk_MemoryRemaining() / 1024);
+		Hunk_MemoryRemaining() / 1024, stream->lowestFree / 1024);
 	Sys_XboxMemoryReport("after world load");
 }
 
 /* The hunk owns the world data; the client clears it after the renderer shuts down. */
 void XboxNV2AWorld_Free(void)
 {
+	XboxWorldEndLoad();
 	memset(&xboxWorld, 0, sizeof(xboxWorld));
 }
 

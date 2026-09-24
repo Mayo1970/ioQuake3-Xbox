@@ -188,6 +188,7 @@ static byte *xboxNV2ATexturePool;
 static size_t xboxNV2ATexturePoolUsed;
 static XboxNV2AImage xboxNV2AImages[XBOX_NV2A_MAX_IMAGES + XBOX_NV2A_MAX_CINEMATICS];
 static unsigned int xboxNV2AImageCount;
+static unsigned int xboxNV2ADxtImageCount;
 static XboxNV2AShader xboxNV2AShaders[XBOX_NV2A_MAX_SHADERS];
 static unsigned int xboxNV2AShaderCount;
 static int xboxNV2ABoundImage;
@@ -514,29 +515,43 @@ static uint16_t XboxNV2APackTexel(const byte *rgba, XguTexFormatColor format)
 }
 
 static int XboxNV2AAddImage(const char *name, int width, int height,
-	const byte *rgba, qboolean highColor)
+	const byte *rgba, int storage)
 {
 	XboxNV2AImage *image;
-	XguTexFormatColor format = highColor ? XGU_TEXTURE_FORMAT_X8R8G8B8_SWIZZLED :
-		XGU_TEXTURE_FORMAT_R5G6B5_SWIZZLED;
-	size_t textureSize = (size_t)width * (size_t)height * (highColor ? 4 : 2);
+	XguTexFormatColor format;
+	qboolean alpha = qfalse;
+	size_t textureSize;
 	size_t offset;
 	size_t pixel;
 	int x, y;
 
+	for (pixel = 0; pixel < (size_t)width * (size_t)height; ++pixel) {
+		if (rgba[pixel * 4 + 3] != 255) {
+			alpha = qtrue;
+			break;
+		}
+	}
+	/* DXT1's 1-bit alpha would turn texels black under additive or filter blends. */
+	if (storage == XBOX_NV2A_IMAGE_DXT1 && (alpha || width < 4 || height < 4))
+		storage = XBOX_NV2A_IMAGE_16BIT;
+	if (storage == XBOX_NV2A_IMAGE_DXT1) {
+		format = XGU_TEXTURE_FORMAT_DXT1;
+		textureSize = (size_t)width * (size_t)height / 2;
+	} else if (storage == XBOX_NV2A_IMAGE_32BIT) {
+		format = alpha ? XGU_TEXTURE_FORMAT_A8R8G8B8_SWIZZLED :
+			XGU_TEXTURE_FORMAT_X8R8G8B8_SWIZZLED;
+		textureSize = (size_t)width * (size_t)height * 4;
+	} else {
+		format = alpha ? XGU_TEXTURE_FORMAT_A4R4G4B4_SWIZZLED :
+			XGU_TEXTURE_FORMAT_R5G6B5_SWIZZLED;
+		textureSize = (size_t)width * (size_t)height * 2;
+	}
 	offset = (xboxNV2ATexturePoolUsed + XBOX_NV2A_TEXTURE_ALIGN - 1) &
 		~(size_t)(XBOX_NV2A_TEXTURE_ALIGN - 1);
 	if (xboxNV2AImageCount >= XBOX_NV2A_MAX_IMAGES ||
 		offset + textureSize > XBOX_NV2A_TEXTURE_POOL_BYTES) {
 		Sys_XboxLog("Xbox NV2A: texture pool full, skipped %s\n", name);
 		return 0;
-	}
-	for (pixel = 0; pixel < (size_t)width * (size_t)height; ++pixel) {
-		if (rgba[pixel * 4 + 3] != 255) {
-			format = highColor ? XGU_TEXTURE_FORMAT_A8R8G8B8_SWIZZLED :
-				XGU_TEXTURE_FORMAT_A4R4G4B4_SWIZZLED;
-			break;
-		}
 	}
 
 	image = &xboxNV2AImages[xboxNV2AImageCount];
@@ -545,17 +560,22 @@ static int XboxNV2AAddImage(const char *name, int width, int height,
 	image->height = height;
 	image->format = format;
 	Q_strncpyz(image->name, name, sizeof(image->name));
-	for (y = 0; y < height; ++y) {
-		for (x = 0; x < width; ++x) {
-			const byte *texel = rgba + ((size_t)y * width + x) * 4;
-			unsigned int swizzled = XboxNV2ASwizzledOffset((unsigned int)x,
-				(unsigned int)y, (unsigned int)width, (unsigned int)height);
+	if (storage == XBOX_NV2A_IMAGE_DXT1) {
+		XboxNV2ADxt_Compress(rgba, width, height, image->memory);
+		xboxNV2ADxtImageCount++;
+	} else {
+		for (y = 0; y < height; ++y) {
+			for (x = 0; x < width; ++x) {
+				const byte *texel = rgba + ((size_t)y * width + x) * 4;
+				unsigned int swizzled = XboxNV2ASwizzledOffset((unsigned int)x,
+					(unsigned int)y, (unsigned int)width, (unsigned int)height);
 
-			if (highColor)
-				((uint32_t *)image->memory)[swizzled] = ((uint32_t)texel[3] << 24) |
-					((uint32_t)texel[0] << 16) | ((uint32_t)texel[1] << 8) | texel[2];
-			else
-				((uint16_t *)image->memory)[swizzled] = XboxNV2APackTexel(texel, format);
+				if (storage == XBOX_NV2A_IMAGE_32BIT)
+					((uint32_t *)image->memory)[swizzled] = ((uint32_t)texel[3] << 24) |
+						((uint32_t)texel[0] << 16) | ((uint32_t)texel[1] << 8) | texel[2];
+				else
+					((uint16_t *)image->memory)[swizzled] = XboxNV2APackTexel(texel, format);
+			}
 		}
 	}
 	/* The GPU must not fetch a WC texture before its upload has completed. */
@@ -576,7 +596,7 @@ int XboxNV2A_FindImage(const char *name)
 }
 
 int XboxNV2A_CreateImage(const char *name, int width, int height,
-	const byte *rgba, qboolean highColor)
+	const byte *rgba, int storage)
 {
 	int index;
 
@@ -585,7 +605,7 @@ int XboxNV2A_CreateImage(const char *name, int width, int height,
 		width > XBOX_NV2A_MAX_TEXTURE_SIZE || height > XBOX_NV2A_MAX_TEXTURE_SIZE)
 		return 0;
 	index = XboxNV2A_FindImage(name);
-	return index ? index : XboxNV2AAddImage(name, width, height, rgba, highColor);
+	return index ? index : XboxNV2AAddImage(name, width, height, rgba, storage);
 }
 
 /* ioq3 keeps stageless shaders only for skies (here: with an outer box) and fog volumes. */
@@ -748,7 +768,8 @@ static int XboxNV2ACreateFogImage(void)
 				(y + 0.5f) / XBOX_NV2A_FOG_T));
 		}
 	}
-	image = XboxNV2AAddImage("*fog", XBOX_NV2A_FOG_S, XBOX_NV2A_FOG_T, data, qtrue);
+	image = XboxNV2AAddImage("*fog", XBOX_NV2A_FOG_S, XBOX_NV2A_FOG_T, data,
+		XBOX_NV2A_IMAGE_32BIT);
 	free(data);
 	return image;
 }
@@ -774,7 +795,7 @@ static int XboxNV2ACreateDlightImage(void)
 		}
 	}
 	return XboxNV2AAddImage("*dlight", XBOX_NV2A_DLIGHT_SIZE, XBOX_NV2A_DLIGHT_SIZE,
-		&data[0][0][0], qtrue);
+		&data[0][0][0], XBOX_NV2A_IMAGE_32BIT);
 }
 
 static void XboxNV2AResetTextures(void)
@@ -795,7 +816,8 @@ static void XboxNV2AResetTextures(void)
 	xboxNV2AImageCount = XBOX_NV2A_WHITE_IMAGE;
 	xboxNV2AShaderCount = XBOX_NV2A_WHITE_SHADER;
 	xboxNV2ATexturePoolUsed = 0;
-	XboxNV2AAddImage("*white", 1, 1, whitePixel, qfalse);
+	xboxNV2ADxtImageCount = 0;
+	XboxNV2AAddImage("*white", 1, 1, whitePixel, XBOX_NV2A_IMAGE_16BIT);
 	xboxNV2AFogImage = XboxNV2ACreateFogImage();
 	xboxNV2ADlightImage = XboxNV2ACreateDlightImage();
 
@@ -1908,8 +1930,8 @@ void XboxNV2A_Shutdown(qboolean destroyWindow)
 	if (!xboxNV2AInitialized)
 		return;
 	XboxNV2AWaitIdle("shutdown");
-	Sys_XboxLog("Xbox NV2A: %u images, %u shaders, %u KiB texture pool used\n",
-		xboxNV2AImageCount, xboxNV2AShaderCount,
+	Sys_XboxLog("Xbox NV2A: %u images (%u DXT1), %u shaders, %u KiB texture pool used\n",
+		xboxNV2AImageCount, xboxNV2ADxtImageCount, xboxNV2AShaderCount,
 		(unsigned int)(xboxNV2ATexturePoolUsed / 1024));
 	/* The world, models and skins hold shader handles, so all tables reset together. */
 	XboxNV2AWorld_Free();

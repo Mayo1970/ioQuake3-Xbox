@@ -11,6 +11,8 @@
 #define XBOX_NV2A_MAX_SKINS 256
 /* ioq3 MAX_SKIN_SURFACES. */
 #define XBOX_NV2A_MAX_SKIN_SURFACES 256
+/* q3dm11's five players take 4057 KiB at LOD 1 (5150 at LOD 0, 3099 at LOD 2); the heap has ~5 MiB. */
+#define XBOX_NV2A_PLAYER_LOD 1
 
 typedef struct {
 	char name[MAX_QPATH];
@@ -143,9 +145,29 @@ static md3Header_t *XboxModelLoadMD3(const char *name)
 		}
 		surface = (md3Surface_t *)((byte *)surface + surface->ofsEnd);
 	}
-	Sys_XboxLog("Xbox model: %s frames=%d surfaces=%d tags=%d\n", name,
-		md3->numFrames, md3->numSurfaces, md3->numTags);
+	Sys_XboxLog("Xbox model: %s frames=%d surfaces=%d tags=%d bytes=%ld\n", name,
+		md3->numFrames, md3->numSurfaces, md3->numTags, length);
 	return md3;
+}
+
+/* Player MD3s load only the name_N.md3 LOD; a missing one falls back toward LOD 0, as in ioq3. */
+static md3Header_t *XboxModelLoadLod(const char *name)
+{
+	char base[MAX_QPATH];
+	char path[MAX_QPATH];
+	md3Header_t *md3;
+	int lod;
+
+	if (Q_stricmpn(name, "models/players/", 15) || Q_stricmp(COM_GetExtension(name), "md3"))
+		return XboxModelLoadMD3(name);
+	COM_StripExtension(name, base, sizeof(base));
+	for (lod = XBOX_NV2A_PLAYER_LOD; lod > 0; --lod) {
+		Com_sprintf(path, sizeof(path), "%s_%d.md3", base, lod);
+		md3 = XboxModelLoadMD3(path);
+		if (md3)
+			return md3;
+	}
+	return XboxModelLoadMD3(name);
 }
 
 static xboxNV2AModel_t *XboxModelFind(const char *name)
@@ -187,7 +209,7 @@ qhandle_t XboxNV2AModel_Register(const char *name)
 		if (!model)
 			return 0;
 		if (name[0] != '*')
-			model->md3 = XboxModelLoadMD3(name);
+			model->md3 = XboxModelLoadLod(name);
 	}
 	return (model->md3 || model->brush >= 0) ? (qhandle_t)(model - xboxNV2AModels) : 0;
 }

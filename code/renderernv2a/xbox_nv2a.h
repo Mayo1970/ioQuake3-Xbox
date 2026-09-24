@@ -281,6 +281,14 @@ typedef struct {
 
 #define XBOX_NV2A_WORLD_ENTITY (-1)
 
+/* Texel storage for XboxNV2A_CreateImage; 32-bit keeps lightmaps free of 16-bit banding. */
+typedef enum {
+	XBOX_NV2A_IMAGE_16BIT,
+	XBOX_NV2A_IMAGE_32BIT,
+	/* Opaque images of 4x4 texels or more; others fall back to 16-bit. */
+	XBOX_NV2A_IMAGE_DXT1
+} xboxNV2AImageStorage_t;
+
 qboolean XboxNV2A_Init(void);
 void XboxNV2A_Shutdown(qboolean destroyWindow);
 void XboxNV2A_Kill(void);
@@ -291,9 +299,8 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame);
 void XboxNV2A_EndFrame(int *frontEndMsec, int *backEndMsec);
 void XboxNV2A_SetColor(const float *rgba);
 int XboxNV2A_FindImage(const char *name);
-/* highColor keeps 8 bits per channel; lightmaps use it to avoid 16-bit banding. */
 int XboxNV2A_CreateImage(const char *name, int width, int height,
-	const byte *rgba, qboolean highColor);
+	const byte *rgba, int storage);
 qboolean XboxNV2A_FindShader(const char *name, int flavor, qhandle_t *handle);
 qhandle_t XboxNV2A_CreateShader(const char *name, int flavor,
 	const xboxNV2AShaderDef_t *def);
@@ -317,6 +324,9 @@ void XboxNV2A_AddSkySurface(const xboxNV2AWorldSurface_t *surface);
 void XboxNV2A_AddPoly(qhandle_t shader, int numVerts, const polyVert_t *verts,
 	int numPolys);
 void XboxNV2A_RenderScene(const refdef_t *fd);
+
+/* DXT1 blocks row by row, the NV2A layout; width and height are multiples of 4. */
+void XboxNV2ADxt_Compress(const byte *rgba, int width, int height, void *out);
 
 /* Shader scripts and image files, in xbox_nv2a_shader.c. */
 qhandle_t XboxNV2AShader_Register(const char *name, qboolean mipRawImage);
