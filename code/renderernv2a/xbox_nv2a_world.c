@@ -20,6 +20,11 @@
 /* ioq3 r_ambientScale and r_directedScale defaults. */
 #define XBOX_WORLD_AMBIENT_SCALE 0.6f
 #define XBOX_WORLD_DIRECTED_SCALE 1.0f
+/* ioq3 tr_marks.c MAX_VERTS_ON_POLY and its 64-surface list. */
+#define XBOX_WORLD_MARK_VERTS 64
+#define XBOX_WORLD_MARK_SURFACES 64
+
+enum { XBOX_WORLD_FRONT, XBOX_WORLD_BACK, XBOX_WORLD_ON };
 
 /* ioq3 mnode_t: contents is -1 for decision nodes and 0 for leafs. */
 typedef struct xboxWorldNode_s {
@@ -68,6 +73,8 @@ typedef struct {
 	char *entityParse;
 	int lightmaps[XBOX_WORLD_MAX_LIGHTMAPS];
 	int numLightmaps;
+	xboxNV2AFog_t *fogs;
+	int numFogs;
 	vec3_t sunDirection;
 	int visCount;
 	int viewCount;
@@ -185,6 +192,68 @@ static void XboxWorldLoadPlanes(const dheader_t *header)
 		out->dist = in[i].dist;
 		out->type = PlaneTypeForNormal(out->normal);
 		SetPlaneSignbits(out);
+	}
+}
+
+/* ioq3 R_LoadFogs: fog 0 means none; the bounds come from the brush's six axial sides. */
+static void XboxWorldLoadFogs(const dheader_t *header)
+{
+	const dfog_t *fogs;
+	const dbrush_t *brushes;
+	const dbrushside_t *sides;
+	int count, numBrushes, numSides, i, k;
+
+	fogs = (const dfog_t *)XboxWorldLump(header, LUMP_FOGS, sizeof(dfog_t), &count);
+	brushes = (const dbrush_t *)XboxWorldLump(header, LUMP_BRUSHES, sizeof(dbrush_t),
+		&numBrushes);
+	sides = (const dbrushside_t *)XboxWorldLump(header, LUMP_BRUSHSIDES, sizeof(dbrushside_t),
+		&numSides);
+	xboxWorld.numFogs = count + 1;
+	xboxWorld.fogs = (xboxNV2AFog_t *)ri.Hunk_Alloc(xboxWorld.numFogs *
+		sizeof(*xboxWorld.fogs), h_low);
+	for (i = 0; i < count; ++i) {
+		xboxNV2AFog_t *out = &xboxWorld.fogs[i + 1];
+		const dbrush_t *brush;
+		char name[MAX_QPATH];
+		vec3_t color;
+		float depth;
+		int firstSide, side;
+
+		if (fogs[i].brushNum < 0 || fogs[i].brushNum >= numBrushes)
+			ri.Error(ERR_DROP, "fog brushNumber out of range");
+		brush = &brushes[fogs[i].brushNum];
+		firstSide = brush->firstSide;
+		if (firstSide < 0 || firstSide > numSides - 6)
+			ri.Error(ERR_DROP, "fog brush sideNumber out of range");
+		/* Brush sides start with the axial ones: -x, +x, -y, +y, -z, +z. */
+		for (k = 0; k < 6; ++k) {
+			if (sides[firstSide + k].planeNum < 0 ||
+				sides[firstSide + k].planeNum >= xboxWorld.numPlanes)
+				ri.Error(ERR_DROP, "fog brush plane out of range");
+		}
+		for (k = 0; k < 3; ++k) {
+			out->bounds[0][k] = -xboxWorld.planes[sides[firstSide + k * 2].planeNum].dist;
+			out->bounds[1][k] = xboxWorld.planes[sides[firstSide + k * 2 + 1].planeNum].dist;
+		}
+		Q_strncpyz(name, fogs[i].shader, sizeof(name));
+		XboxNV2A_ShaderFogParms(XboxNV2AShader_RegisterWorld(name, XBOX_NV2A_SHADER_VERTEX),
+			color, &depth);
+		for (k = 0; k < 3; ++k)
+			out->color[k] = (byte)(255 * Com_Clamp(0.0f, 1.0f, color[k]));
+		out->color[3] = 255;
+		out->tcScale = 1.0f / ((depth < 1.0f ? 1.0f : depth) * 8);
+		/* The visible side's plane, turned to face into the fog. */
+		side = fogs[i].visibleSide;
+		if (side < 0 || firstSide + side >= numSides || sides[firstSide + side].planeNum < 0 ||
+			sides[firstSide + side].planeNum >= xboxWorld.numPlanes) {
+			out->hasSurface = qfalse;
+		} else {
+			const cplane_t *plane = &xboxWorld.planes[sides[firstSide + side].planeNum];
+
+			out->hasSurface = qtrue;
+			VectorNegate(plane->normal, out->surface);
+			out->surface[3] = -plane->dist;
+		}
 	}
 }
 
@@ -411,6 +480,12 @@ static void XboxWorldLoadSurfaces(const dheader_t *header)
 		counts[3] += surface->numVerts;
 		surface->shader = XboxWorldShader(shaders, numShaders, ds->shaderNum, flavor);
 		surface->lightmap = lit ? xboxWorld.lightmaps[ds->lightmapNum] : 0;
+		surface->fogIndex = ds->fogNum >= 0 && ds->fogNum + 1 < xboxWorld.numFogs ?
+			ds->fogNum + 1 : 0;
+		/* ioq3 reads the shader's surfaceparms; q3map stores the same flags in the BSP. */
+		surface->noMarks = (shaders[ds->shaderNum].surfaceFlags &
+			(SURF_NOIMPACT | SURF_NOMARKS | SURF_NODRAW)) ||
+			(shaders[ds->shaderNum].contentFlags & CONTENTS_FOG);
 	}
 	Sys_XboxLog("Xbox world: %d surfaces: faces=%d patches=%d soups=%d verts=%d\n",
 		xboxWorld.numSurfaces, counts[XBOX_NV2A_SURFACE_FACE],
@@ -652,6 +727,7 @@ void XboxNV2AWorld_Load(const char *name)
 
 	XboxWorldLoadLightmaps(header);
 	XboxWorldLoadPlanes(header);
+	XboxWorldLoadFogs(header);
 	XboxWorldLoadSurfaces(header);
 	XboxWorldLoadMarks(header);
 	XboxWorldLoadNodes(header);
@@ -726,9 +802,9 @@ static void XboxWorldSetupFrustum(const refdef_t *fd)
 }
 
 /* ioq3 R_MarkLeaves: mark every PVS leaf in an open area, and its parents. */
-static void XboxWorldMarkLeaves(const refdef_t *fd)
+static void XboxWorldMarkLeaves(const refdef_t *fd, const vec3_t pvsOrigin)
 {
-	int cluster = XboxWorldPointInLeaf(fd->vieworg)->cluster;
+	int cluster = XboxWorldPointInLeaf(pvsOrigin)->cluster;
 	const byte *vis;
 	int i;
 
@@ -755,16 +831,18 @@ static void XboxWorldMarkLeaves(const refdef_t *fd)
 	}
 }
 
-/* ioq3 R_AddWorldSurface and R_CullSurface. */
+/* ioq3 R_AddWorldSurface and R_CullSurface; sky surfaces go to the sky box instead. */
 static void XboxWorldAddSurface(xboxNV2AWorldSurface_t *surface, const vec3_t viewOrigin)
 {
+	qboolean sky;
 	int cull;
 	int i;
 
 	if (surface->viewCount == xboxWorld.viewCount)
 		return;
 	surface->viewCount = xboxWorld.viewCount;
-	if (!XboxNV2A_ShaderIsDrawable(surface->shader))
+	sky = XboxNV2A_ShaderIsSky(surface->shader);
+	if (!sky && !XboxNV2A_ShaderIsDrawable(surface->shader))
 		return;
 	if (surface->type == XBOX_NV2A_SURFACE_FACE) {
 		float d = DotProduct(viewOrigin, surface->plane.normal);
@@ -783,7 +861,10 @@ static void XboxWorldAddSurface(xboxNV2AWorldSurface_t *surface, const vec3_t vi
 				return;
 		}
 	}
-	XboxNV2A_AddWorldSurface(surface, XBOX_NV2A_WORLD_ENTITY);
+	if (sky)
+		XboxNV2A_AddSkySurface(surface);
+	else
+		XboxNV2A_AddWorldSurface(surface, XBOX_NV2A_WORLD_ENTITY);
 }
 
 /* ioq3 R_RecursiveWorldNode: planeBits drop the frustum planes a node lies fully inside. */
@@ -818,7 +899,7 @@ static void XboxWorldRecursiveNode(xboxWorldNode_t *node, int planeBits,
 }
 
 /* Adds the visible world surfaces and returns ioq3 R_SetFarClip's far plane distance. */
-float XboxNV2AWorld_AddSurfaces(const refdef_t *fd)
+float XboxNV2AWorld_AddSurfaces(const refdef_t *fd, const vec3_t pvsOrigin)
 {
 	float farthest = 0.0f;
 	int i;
@@ -827,7 +908,7 @@ float XboxNV2AWorld_AddSurfaces(const refdef_t *fd)
 		return XBOX_WORLD_DEFAULT_ZFAR;
 	xboxWorld.viewCount++;
 	XboxWorldSetupFrustum(fd);
-	XboxWorldMarkLeaves(fd);
+	XboxWorldMarkLeaves(fd, pvsOrigin);
 	ClearBounds(xboxWorld.visBounds[0], xboxWorld.visBounds[1]);
 	XboxWorldRecursiveNode(xboxWorld.nodes, 15, fd->vieworg);
 	if (xboxWorld.visBounds[0][0] > xboxWorld.visBounds[1][0])
@@ -957,6 +1038,18 @@ qboolean XboxNV2AWorld_LightGrid(const vec3_t origin, vec3_t ambient,
 	return qtrue;
 }
 
+int XboxNV2AWorld_NumFogs(void)
+{
+	return xboxWorld.loaded ? xboxWorld.numFogs : 0;
+}
+
+const xboxNV2AFog_t *XboxNV2AWorld_Fog(int index)
+{
+	if (!xboxWorld.loaded || index <= 0 || index >= xboxWorld.numFogs)
+		return NULL;
+	return &xboxWorld.fogs[index];
+}
+
 /* ioq3 R_GetEntityToken: the parse restarts once the string is used up. */
 qboolean XboxNV2AWorld_GetEntityToken(char *buffer, int size)
 {
@@ -990,4 +1083,198 @@ qboolean XboxNV2AWorld_InPVS(const vec3_t p1, const vec3_t p2)
 		return qfalse;
 	vis = ri.CM_ClusterPVS(c1);
 	return (vis[c2 >> 3] & (1 << (c2 & 7))) != 0;
+}
+
+/* ioq3 R_ChopPolyBehindPlane: keeps the part in front; out needs two more slots than in. */
+static void XboxWorldChopPoly(int numIn, vec3_t in[XBOX_WORLD_MARK_VERTS], int *numOut,
+	vec3_t out[XBOX_WORLD_MARK_VERTS], const vec3_t normal, float dist, float epsilon)
+{
+	float dists[XBOX_WORLD_MARK_VERTS + 4];
+	int sides[XBOX_WORLD_MARK_VERTS + 4];
+	int counts[3] = {0, 0, 0};
+	int i, j;
+
+	*numOut = 0;
+	if (numIn >= XBOX_WORLD_MARK_VERTS - 2)
+		return;
+	for (i = 0; i < numIn; ++i) {
+		dists[i] = DotProduct(in[i], normal) - dist;
+		if (dists[i] > epsilon)
+			sides[i] = XBOX_WORLD_FRONT;
+		else if (dists[i] < -epsilon)
+			sides[i] = XBOX_WORLD_BACK;
+		else
+			sides[i] = XBOX_WORLD_ON;
+		counts[sides[i]]++;
+	}
+	sides[i] = sides[0];
+	dists[i] = dists[0];
+	if (!counts[XBOX_WORLD_FRONT])
+		return;
+	if (!counts[XBOX_WORLD_BACK]) {
+		*numOut = numIn;
+		memcpy(out, in, (size_t)numIn * sizeof(vec3_t));
+		return;
+	}
+	for (i = 0; i < numIn; ++i) {
+		const float *p1 = in[i];
+		const float *p2;
+		float d, dot;
+
+		if (sides[i] != XBOX_WORLD_BACK) {
+			VectorCopy(p1, out[*numOut]);
+			(*numOut)++;
+		}
+		if (sides[i] == XBOX_WORLD_ON || sides[i + 1] == XBOX_WORLD_ON ||
+			sides[i + 1] == sides[i])
+			continue;
+		p2 = in[(i + 1) % numIn];
+		d = dists[i] - dists[i + 1];
+		dot = d == 0.0f ? 0.0f : dists[i] / d;
+		for (j = 0; j < 3; ++j)
+			out[*numOut][j] = p1[j] + dot * (p2[j] - p1[j]);
+		(*numOut)++;
+	}
+}
+
+/* ioq3 R_BoxSurfaces_r: faces and patches in the mark box, each listed once per call. */
+static void XboxWorldBoxSurfaces(xboxWorldNode_t *node, vec3_t mins, vec3_t maxs,
+	xboxNV2AWorldSurface_t **list, int *listLength, const vec3_t dir)
+{
+	int i;
+
+	while (node->contents == -1) {
+		int side = BoxOnPlaneSide(mins, maxs, node->plane);
+
+		if (side == 1) {
+			node = node->children[0];
+		} else if (side == 2) {
+			node = node->children[1];
+		} else {
+			XboxWorldBoxSurfaces(node->children[0], mins, maxs, list, listLength, dir);
+			node = node->children[1];
+		}
+	}
+	for (i = 0; i < node->numMarks && *listLength < XBOX_WORLD_MARK_SURFACES; ++i) {
+		xboxNV2AWorldSurface_t *surface = &xboxWorld.surfaces[xboxWorld.marks[node->firstMark + i]];
+
+		if (surface->noMarks || !surface->numVerts) {
+			surface->viewCount = xboxWorld.viewCount;
+		} else if (surface->type == XBOX_NV2A_SURFACE_FACE) {
+			int side = BoxOnPlaneSide(mins, maxs, &surface->plane);
+
+			/* The face plane must cross the box and not meet the projection at a sharp angle. */
+			if (side == 1 || side == 2 || DotProduct(surface->plane.normal, dir) > -0.5f)
+				surface->viewCount = xboxWorld.viewCount;
+		}
+		if (surface->viewCount != xboxWorld.viewCount) {
+			surface->viewCount = xboxWorld.viewCount;
+			list[(*listLength)++] = surface;
+		}
+	}
+}
+
+/* ioq3 R_AddMarkFragments: chops a triangle by every bounding plane and keeps the rest. */
+static void XboxWorldAddMarkFragment(vec3_t clipPoints[2][XBOX_WORLD_MARK_VERTS],
+	int numPlanes, vec3_t *normals, const float *dists, int maxPoints, vec3_t pointBuffer,
+	markFragment_t *fragmentBuffer, int *returnedPoints, int *returnedFragments)
+{
+	int numClipPoints = 3;
+	int pingPong = 0;
+	markFragment_t *fragment;
+	int i;
+
+	for (i = 0; i < numPlanes && numClipPoints; ++i) {
+		XboxWorldChopPoly(numClipPoints, clipPoints[pingPong], &numClipPoints,
+			clipPoints[!pingPong], normals[i], dists[i], 0.5f);
+		pingPong ^= 1;
+	}
+	if (!numClipPoints || numClipPoints + *returnedPoints > maxPoints)
+		return;
+	fragment = &fragmentBuffer[*returnedFragments];
+	fragment->firstPoint = *returnedPoints;
+	fragment->numPoints = numClipPoints;
+	memcpy(pointBuffer + *returnedPoints * 3, clipPoints[pingPong],
+		(size_t)numClipPoints * sizeof(vec3_t));
+	*returnedPoints += numClipPoints;
+	(*returnedFragments)++;
+}
+
+/* ioq3 R_MarkFragments; triangle soups are skipped, as r_marksOnTriangleMeshes is 0. */
+int XboxNV2AWorld_MarkFragments(int numPoints, const vec3_t *points,
+	const vec3_t projection, int maxPoints, vec3_t pointBuffer, int maxFragments,
+	markFragment_t *fragmentBuffer)
+{
+	xboxNV2AWorldSurface_t *surfaces[XBOX_WORLD_MARK_SURFACES];
+	vec3_t normals[XBOX_WORLD_MARK_VERTS + 2];
+	float dists[XBOX_WORLD_MARK_VERTS + 2];
+	vec3_t clipPoints[2][XBOX_WORLD_MARK_VERTS];
+	vec3_t mins, maxs, projectionDir, v1, v2;
+	int numSurfaces = 0;
+	int returnedPoints = 0;
+	int returnedFragments = 0;
+	int numPlanes, i, j, k;
+
+	if (numPoints <= 0 || maxFragments <= 0 || !xboxWorld.loaded)
+		return 0;
+	xboxWorld.viewCount++;
+	VectorNormalize2(projection, projectionDir);
+	ClearBounds(mins, maxs);
+	for (i = 0; i < numPoints; ++i) {
+		vec3_t temp;
+
+		AddPointToBounds(points[i], mins, maxs);
+		VectorAdd(points[i], projection, temp);
+		AddPointToBounds(temp, mins, maxs);
+		/* Also the leafs in front of the hit surface. */
+		VectorMA(points[i], -20.0f, projectionDir, temp);
+		AddPointToBounds(temp, mins, maxs);
+	}
+	if (numPoints > XBOX_WORLD_MARK_VERTS)
+		numPoints = XBOX_WORLD_MARK_VERTS;
+	for (i = 0; i < numPoints; ++i) {
+		VectorSubtract(points[(i + 1) % numPoints], points[i], v1);
+		VectorAdd(points[i], projection, v2);
+		VectorSubtract(points[i], v2, v2);
+		CrossProduct(v1, v2, normals[i]);
+		VectorNormalizeFast(normals[i]);
+		dists[i] = DotProduct(normals[i], points[i]);
+	}
+	/* Near and far planes: 20 units along the projection and 32 against it. */
+	VectorCopy(projectionDir, normals[numPoints]);
+	dists[numPoints] = DotProduct(normals[numPoints], points[0]) - 32.0f;
+	VectorCopy(projectionDir, normals[numPoints + 1]);
+	VectorInverse(normals[numPoints + 1]);
+	dists[numPoints + 1] = DotProduct(normals[numPoints + 1], points[0]) - 20.0f;
+	numPlanes = numPoints + 2;
+
+	XboxWorldBoxSurfaces(xboxWorld.nodes, mins, maxs, surfaces, &numSurfaces, projectionDir);
+	for (i = 0; i < numSurfaces; ++i) {
+		const xboxNV2AWorldSurface_t *surface = surfaces[i];
+
+		if (surface->type == XBOX_NV2A_SURFACE_TRIANGLES ||
+			(surface->type == XBOX_NV2A_SURFACE_FACE &&
+			DotProduct(surface->plane.normal, projectionDir) > -0.5f))
+			continue;
+		for (k = 0; k + 2 < surface->numIndexes; k += 3) {
+			for (j = 0; j < 3; ++j)
+				VectorCopy(surface->verts[surface->indexes[k + j]].xyz, clipPoints[0][j]);
+			/* Grid cells hold two triangles in ioq3's order; each must face the projection. */
+			if (surface->type == XBOX_NV2A_SURFACE_GRID) {
+				vec3_t normal;
+
+				VectorSubtract(clipPoints[0][0], clipPoints[0][1], v1);
+				VectorSubtract(clipPoints[0][2], clipPoints[0][1], v2);
+				CrossProduct(v1, v2, normal);
+				VectorNormalizeFast(normal);
+				if (DotProduct(normal, projectionDir) >= ((k / 3) & 1 ? -0.05f : -0.1f))
+					continue;
+			}
+			XboxWorldAddMarkFragment(clipPoints, numPlanes, normals, dists, maxPoints,
+				pointBuffer, fragmentBuffer, &returnedPoints, &returnedFragments);
+			if (returnedFragments == maxFragments)
+				return returnedFragments;
+		}
+	}
+	return returnedFragments;
 }

@@ -17,6 +17,9 @@
 /* Same per-surface limits as ioq3's tess (SHADER_MAX_VERTEXES/INDEXES). */
 #define XBOX_NV2A_TESS_VERTS 1000
 #define XBOX_NV2A_TESS_INDEXES (6 * XBOX_NV2A_TESS_VERTS)
+/* ioq3 SKY_SUBDIVISIONS; the cloud grid needs 5 * 81 tess vertices at most. */
+#define XBOX_NV2A_SKY_SUBDIVISIONS 8
+#define XBOX_NV2A_SKY_SIDES 6
 
 /* Shader scripts name blend factors with these GL values; xbox_nv2a.c maps them to xgu. */
 #define GL_ZERO 0x0000
@@ -38,6 +41,7 @@
 #define XBOX_NV2A_SORT_DECAL 4.0f
 #define XBOX_NV2A_SORT_SEE_THROUGH 5.0f
 #define XBOX_NV2A_SORT_BANNER 6.0f
+#define XBOX_NV2A_SORT_FOG 7.0f
 #define XBOX_NV2A_SORT_UNDERWATER 8.0f
 #define XBOX_NV2A_SORT_BLEND0 9.0f
 #define XBOX_NV2A_SORT_BLEND1 10.0f
@@ -107,8 +111,24 @@ typedef enum {
 	XBOX_NV2A_ALPHAGEN_WAVE,
 	XBOX_NV2A_ALPHAGEN_CONST,
 	XBOX_NV2A_ALPHAGEN_ENTITY,
-	XBOX_NV2A_ALPHAGEN_ONE_MINUS_ENTITY
+	XBOX_NV2A_ALPHAGEN_ONE_MINUS_ENTITY,
+	XBOX_NV2A_ALPHAGEN_PORTAL
 } xboxNV2AAlphaGen_t;
+
+/* ioq3 acff_t: how a blended stage fades its colours inside fog. */
+typedef enum {
+	XBOX_NV2A_ACFF_NONE,
+	XBOX_NV2A_ACFF_MODULATE_RGB,
+	XBOX_NV2A_ACFF_MODULATE_RGBA,
+	XBOX_NV2A_ACFF_MODULATE_ALPHA
+} xboxNV2AAdjustForFog_t;
+
+/* ioq3 fogPass_t: opaque shaders fog with depth equal, fog volumes with depth less-equal. */
+typedef enum {
+	XBOX_NV2A_FOGPASS_NONE,
+	XBOX_NV2A_FOGPASS_EQUAL,
+	XBOX_NV2A_FOGPASS_LE
+} xboxNV2AFogPass_t;
 
 typedef enum {
 	XBOX_NV2A_TCGEN_TEXTURE,
@@ -153,13 +173,25 @@ typedef struct {
 	vec3_t tcGenVectors[2];
 	int numTexMods;
 	xboxNV2ATexMod_t texMods[XBOX_NV2A_MAX_TEXMODS];
+	int adjustColorsForFog;
 } xboxNV2AStage_t;
 
 typedef struct {
 	int numStages;
 	float sort;
 	int cull;
+	qboolean polygonOffset;
 	qboolean isSky;
+	/* skyParms outer box in rt, bk, lf, ft, up, dn order; ioq3 draws none if side 0 is missing. */
+	int skyBox[XBOX_NV2A_SKY_SIDES];
+	float cloudHeight;
+	/* surfaceparm fog; fogParms colour and depthForOpaque. */
+	qboolean isFog;
+	vec3_t fogColor;
+	float fogDepth;
+	int fogPass;
+	/* alphaGen portal range; ioq3 skips portal views farther than this. */
+	float portalRange;
 	xboxNV2AStage_t stages[XBOX_NV2A_MAX_STAGES];
 } xboxNV2AShaderDef_t;
 
@@ -182,6 +214,9 @@ typedef struct {
 	int type;
 	int shader;
 	int lightmap;
+	/* nomarks, noimpact, nodraw or fog: ioq3 R_BoxSurfaces_r never puts marks on it. */
+	qboolean noMarks;
+	int fogIndex;
 	int viewCount;
 	cplane_t plane;
 	vec3_t bounds[2];
@@ -190,6 +225,21 @@ typedef struct {
 	xboxNV2AWorldVert_t *verts;
 	unsigned short *indexes;
 } xboxNV2AWorldSurface_t;
+
+/* ioq3 fog_t; fog 0 means none, and surface is the visible side's plane facing into the fog. */
+typedef struct {
+	vec3_t bounds[2];
+	byte color[4];
+	float tcScale;
+	qboolean hasSurface;
+	float surface[4];
+} xboxNV2AFog_t;
+
+/* ioq3 sky_mins/sky_maxs: the (s, t) range of each box side that visible sky covers. */
+typedef struct {
+	float mins[2][XBOX_NV2A_SKY_SIDES];
+	float maxs[2][XBOX_NV2A_SKY_SIDES];
+} xboxNV2ASkyBounds_t;
 
 #define XBOX_NV2A_WORLD_ENTITY (-1)
 
@@ -210,6 +260,8 @@ qboolean XboxNV2A_FindShader(const char *name, int flavor, qhandle_t *handle);
 qhandle_t XboxNV2A_CreateShader(const char *name, int flavor,
 	const xboxNV2AShaderDef_t *def);
 qboolean XboxNV2A_ShaderIsDrawable(qhandle_t shader);
+qboolean XboxNV2A_ShaderIsSky(qhandle_t shader);
+qboolean XboxNV2A_ShaderFogParms(qhandle_t shader, vec3_t color, float *depth);
 int XboxNV2A_ShaderCull(qhandle_t shader);
 void XboxNV2A_DrawStretchPic(float x, float y, float w, float h,
 	float s1, float t1, float s2, float t2, qhandle_t shader);
@@ -222,6 +274,9 @@ void XboxNV2A_AddRefEntity(const refEntity_t *entity);
 void XboxNV2A_AddLight(const vec3_t origin, float intensity, float r, float g,
 	float b);
 void XboxNV2A_AddWorldSurface(const xboxNV2AWorldSurface_t *surface, int entity);
+void XboxNV2A_AddSkySurface(const xboxNV2AWorldSurface_t *surface);
+void XboxNV2A_AddPoly(qhandle_t shader, int numVerts, const polyVert_t *verts,
+	int numPolys);
 void XboxNV2A_RenderScene(const refdef_t *fd);
 
 /* Shader scripts and image files, in xbox_nv2a_shader.c. */
@@ -249,7 +304,7 @@ void XboxNV2ASkin_FreeAll(void);
 void XboxNV2AWorld_Load(const char *name);
 void XboxNV2AWorld_Free(void);
 qboolean XboxNV2AWorld_Loaded(void);
-float XboxNV2AWorld_AddSurfaces(const refdef_t *fd);
+float XboxNV2AWorld_AddSurfaces(const refdef_t *fd, const vec3_t pvsOrigin);
 void XboxNV2AWorld_AddBrushModel(int submodel, int entity);
 void XboxNV2AWorld_SubmodelBounds(int submodel, vec3_t mins, vec3_t maxs);
 void XboxNV2AWorld_SunDirection(vec3_t direction);
@@ -257,5 +312,20 @@ qboolean XboxNV2AWorld_LightGrid(const vec3_t origin, vec3_t ambient,
 	vec3_t directed, vec3_t direction);
 qboolean XboxNV2AWorld_GetEntityToken(char *buffer, int size);
 qboolean XboxNV2AWorld_InPVS(const vec3_t p1, const vec3_t p2);
+int XboxNV2AWorld_NumFogs(void);
+const xboxNV2AFog_t *XboxNV2AWorld_Fog(int index);
+int XboxNV2AWorld_MarkFragments(int numPoints, const vec3_t *points,
+	const vec3_t projection, int maxPoints, vec3_t pointBuffer, int maxFragments,
+	markFragment_t *fragmentBuffer);
+
+/* Sky box and cloud grids, in xbox_nv2a_sky.c; positions are relative to the view origin. */
+void XboxNV2ASky_Clear(xboxNV2ASkyBounds_t *bounds);
+void XboxNV2ASky_AddSurface(xboxNV2ASkyBounds_t *bounds,
+	const xboxNV2AWorldSurface_t *surface, const vec3_t origin);
+int XboxNV2ASky_BoxSide(const xboxNV2ASkyBounds_t *bounds, int side, float boxSize,
+	float (*xyz)[3], float (*st)[2], unsigned short *indexes, int *numIndexes);
+int XboxNV2ASky_Clouds(const xboxNV2ASkyBounds_t *bounds, float cloudHeight,
+	float boxSize, float (*xyz)[3], float (*st)[2], unsigned short *indexes,
+	int *numIndexes);
 
 #endif

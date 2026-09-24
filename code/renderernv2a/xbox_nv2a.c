@@ -39,7 +39,15 @@ typedef struct {
 	int flavor;
 	float sort;
 	int cull;
+	qboolean polygonOffset;
 	qboolean isSky;
+	int skyBox[XBOX_NV2A_SKY_SIDES];
+	float cloudHeight;
+	qboolean isFog;
+	vec3_t fogColor;
+	float fogDepth;
+	int fogPass;
+	float portalRange;
 	int numStages;
 	xboxNV2AStage_t *stages;
 } XboxNV2AShader;
@@ -49,6 +57,9 @@ typedef struct {
 	int shader;
 	int lightmap;
 	qboolean is3D;
+	/* The sky never writes depth; its z sits just in front of the cleared far value. */
+	qboolean isSky;
+	int fogIndex;
 	int numVerts;
 	int numIndexes;
 	double shaderTime;
@@ -65,18 +76,28 @@ typedef struct {
 	unsigned short indexes[XBOX_NV2A_TESS_INDEXES];
 	float stageSt[XBOX_NV2A_TESS_VERTS][2];
 	byte stageColor[XBOX_NV2A_TESS_VERTS][4];
-	/* Signed distance in front of the near plane; negative vertices get clipped. */
+	/* Signed distances in front of the near plane and a portal view's clip plane. */
 	float nearDist[XBOX_NV2A_TESS_VERTS];
-	qboolean clipNear;
+	float portalDist[XBOX_NV2A_TESS_VERTS];
+	qboolean clip;
 } XboxNV2ATess;
 
-/* One MD3 surface or one world/brush surface of the current scene. */
+/* ioq3 srfPoly_t; verts points into xboxNV2APolyVerts. */
+typedef struct {
+	int shader;
+	int numVerts;
+	const polyVert_t *verts;
+} XboxNV2APoly;
+
+/* One surface of the current scene; md3, world and poly are all NULL for a sprite, beam or rail. */
 typedef struct {
 	const md3Surface_t *md3;
 	const xboxNV2AWorldSurface_t *world;
+	const XboxNV2APoly *poly;
 	int entity;
 	int shader;
 	int lightmap;
+	int fogIndex;
 	float sort;
 	int order;
 } XboxNV2ADrawSurf;
@@ -86,6 +107,12 @@ typedef struct {
 	float radius;
 	vec3_t color;
 } XboxNV2ADlight;
+
+/* One visible sky shader of the current view and the box area its surfaces cover. */
+typedef struct {
+	int shader;
+	xboxNV2ASkyBounds_t bounds;
+} XboxNV2ASky;
 
 #define XBOX_NV2A_MAX_IMAGES 512
 /* cl_cin.c MAX_VIDEO_HANDLES; each handle's scratch texture follows the pool images. */
@@ -102,7 +129,8 @@ typedef struct {
 /* Release pbkit does not check for overflow; restart well below its 512 KiB limit. */
 #define XBOX_NV2A_PUSH_LIMIT_DWORDS (96u * 1024u)
 #define XBOX_NV2A_STATE_DWORDS 56u
-#define XBOX_NV2A_MAX_SCENE_ENTITIES 256
+/* ioq3 MAX_REFENTITIES: every smoke puff, explosion and trail is an entity too. */
+#define XBOX_NV2A_MAX_SCENE_ENTITIES MAX_REFENTITIES
 #define XBOX_NV2A_MAX_SCENE_SURFACES 4096
 /* ioq3 MAX_DLIGHTS and the R_SetupEntityLighting falloff constants. */
 #define XBOX_NV2A_MAX_DLIGHTS 32
@@ -114,6 +142,27 @@ typedef struct {
 #define XBOX_NV2A_FUNCTABLE_SIZE 1024
 #define XBOX_NV2A_FUNCTABLE_SIZE2 10
 #define XBOX_NV2A_FUNCTABLE_MASK (XBOX_NV2A_FUNCTABLE_SIZE - 1)
+/* q3dm10 shows two sky shaders; ioq3 draws each one it sees. */
+#define XBOX_NV2A_MAX_SKIES 4
+/* ioq3 MAX_POLYS and MAX_POLYVERTS, the r_maxpolys and r_maxpolyverts defaults. */
+#define XBOX_NV2A_MAX_POLYS 600
+#define XBOX_NV2A_MAX_POLYVERTS 3000
+/* ioq3 r_railWidth, r_railCoreWidth and r_railSegmentLength defaults. */
+#define XBOX_NV2A_RAIL_WIDTH 16
+#define XBOX_NV2A_RAIL_CORE_WIDTH 6
+#define XBOX_NV2A_RAIL_SEGMENT_LENGTH 32.0f
+#define XBOX_NV2A_BEAM_SEGS 6
+/* ioq3 r_offsetfactor and r_offsetunits; nxdk-gles11 and pbgl pass GL's values to the NV2A as-is. */
+#define XBOX_NV2A_POLYGON_OFFSET_FACTOR (-1.0f)
+#define XBOX_NV2A_POLYGON_OFFSET_UNITS (-2.0f)
+/* ioq3 FOG_S, FOG_T and FOG_TABLE_SIZE. */
+#define XBOX_NV2A_FOG_S 256
+#define XBOX_NV2A_FOG_T 32
+#define XBOX_NV2A_FOG_TABLE_SIZE 256
+/* ioq3 depthRange(1, 1) for the sky; 64 units stay above float rounding near 2^24. */
+#define XBOX_NV2A_SKY_DEPTH (XBOX_NV2A_ZMAX - 64.0f)
+/* A triangle clipped by the near and portal planes has at most 5 corners. */
+#define XBOX_NV2A_CLIP_VERTS 6
 
 static XboxNV2AColoredVertex xboxNV2ATriangle[XBOX_NV2A_TRIANGLE_VERTS] = {
 	{{0.0f, 0.0f, 1.0f}, {1.0f, 0.08f, 0.04f, 1.0f}, {0.0f, 0.0f}},
@@ -140,6 +189,7 @@ static int xboxNV2ABoundDepthTest;
 static int xboxNV2ABoundDepthWrite;
 static int xboxNV2ABoundDepthEqual;
 static int xboxNV2ABoundCull;
+static int xboxNV2ABoundPolygonOffset;
 static qboolean xboxNV2ATransformIdentity;
 /* w row of the active 3D transform minus znear: the near-plane distance of a vertex. */
 static float xboxNV2ANearPlane[4];
@@ -165,6 +215,27 @@ static int xboxNV2ASceneFirstDlight;
 static XboxNV2ADrawSurf xboxNV2ADrawSurfs[XBOX_NV2A_MAX_SCENE_SURFACES];
 static int xboxNV2ADrawSurfCount;
 static qboolean xboxNV2ADrawSurfOverflow;
+static XboxNV2ASky xboxNV2ASkies[XBOX_NV2A_MAX_SKIES];
+static int xboxNV2ASkyCount;
+static vec3_t xboxNV2ASkyOrigin;
+/* ioq3 sky_texorder: box side i shows skyBox[order[i]]. */
+static const int xboxNV2ASkyTexOrder[XBOX_NV2A_SKY_SIDES] = {0, 2, 1, 3, 4, 5};
+static XboxNV2APoly xboxNV2APolys[XBOX_NV2A_MAX_POLYS];
+static polyVert_t xboxNV2APolyVerts[XBOX_NV2A_MAX_POLYVERTS];
+static int xboxNV2APolyCount;
+static int xboxNV2APolyVertCount;
+static int xboxNV2ASceneFirstPoly;
+static int xboxNV2AFogImage;
+static float xboxNV2AFogTable[XBOX_NV2A_FOG_TABLE_SIZE];
+static cvar_t *xboxNV2AFastSky;
+/* The view being drawn: the scene's own, or a mirror/portal view drawn just before it. */
+static qboolean xboxNV2AViewIsPortal;
+static qboolean xboxNV2AViewIsMirror;
+static vec3_t xboxNV2AViewOrigin;
+static vec3_t xboxNV2AViewForward;
+/* Portal clip plane in world space and in the active transform's space; n.p >= d stays. */
+static float xboxNV2APortalPlane[4];
+static float xboxNV2APortalPlaneLocal[4];
 
 static float XboxNV2AClamp01(float value)
 {
@@ -214,6 +285,9 @@ static unsigned int xboxNV2AFrameCount;
 static unsigned int xboxNV2ASceneCount;
 static int xboxNV2ALastSceneSignature = -1;
 static const char *xboxNV2ALastShaderName = "none";
+/* Bit per generated surface type already logged; bit 31 is the scene poly. */
+static unsigned int xboxNV2ATracedTypes;
+#define XBOX_NV2A_TRACE_POLY 31
 
 static void XboxNV2AWaitIdle(const char *where)
 {
@@ -248,6 +322,7 @@ static void XboxNV2AInvalidateState(void)
 	xboxNV2ABoundDepthWrite = -1;
 	xboxNV2ABoundDepthEqual = -1;
 	xboxNV2ABoundCull = -1;
+	xboxNV2ABoundPolygonOffset = -1;
 }
 
 /* ioq3 R_InitFogTable/R_Init wave tables. */
@@ -270,6 +345,8 @@ static void XboxNV2AInitTables(void)
 			xboxNV2ATriangleTable[i] = -xboxNV2ATriangleTable[i - XBOX_NV2A_FUNCTABLE_SIZE / 2];
 		}
 	}
+	for (i = 0; i < XBOX_NV2A_FOG_TABLE_SIZE; ++i)
+		xboxNV2AFogTable[i] = sqrtf((float)i / (XBOX_NV2A_FOG_TABLE_SIZE - 1));
 }
 
 static const float *XboxNV2AWaveTable(int func)
@@ -313,12 +390,13 @@ static XguBlendFactor XboxNV2ABlendFactor(unsigned int factor)
 	}
 }
 
-/* 2D stages never touch depth or culling; 3D stages test depth and write it when asked. */
+/* 2D stages never touch depth or culling; depth-tested stages write depth when asked. */
 static void XboxNV2AApplyStageState(const xboxNV2AStage_t *stage, int imageIndex,
-	qboolean is3D, int cull)
+	qboolean is3D, qboolean depthTest, int cull, qboolean polygonOffset)
 {
-	int depthWrite = is3D && stage->depthWrite;
-	int depthEqual = is3D && stage->depthEqual;
+	int depthWrite = depthTest && stage->depthWrite;
+	int depthEqual = depthTest && stage->depthEqual;
+	int offset = depthTest && polygonOffset;
 	uint32_t *p;
 
 	if (!is3D)
@@ -365,9 +443,9 @@ static void XboxNV2AApplyStageState(const xboxNV2AStage_t *stage, int imageIndex
 		}
 		xboxNV2ABoundAlphaFunc = stage->alphaFunc;
 	}
-	if ((int)is3D != xboxNV2ABoundDepthTest) {
-		p = xgu_set_depth_test_enable(p, is3D);
-		xboxNV2ABoundDepthTest = is3D;
+	if ((int)depthTest != xboxNV2ABoundDepthTest) {
+		p = xgu_set_depth_test_enable(p, depthTest);
+		xboxNV2ABoundDepthTest = depthTest;
 	}
 	if (depthWrite != xboxNV2ABoundDepthWrite) {
 		p = xgu_set_depth_mask(p, depthWrite);
@@ -384,6 +462,10 @@ static void XboxNV2AApplyStageState(const xboxNV2AStage_t *stage, int imageIndex
 			p = xgu_set_cull_face(p, cull == XBOX_NV2A_CULL_FRONT ? XGU_CULL_FRONT :
 				XGU_CULL_BACK);
 		xboxNV2ABoundCull = cull;
+	}
+	if (offset != xboxNV2ABoundPolygonOffset) {
+		p = push_command_boolean(p, NV097_SET_POLY_OFFSET_FILL_ENABLE, offset);
+		xboxNV2ABoundPolygonOffset = offset;
 	}
 	pb_end(p);
 }
@@ -432,9 +514,10 @@ static int XboxNV2AAddImage(const char *name, int width, int height,
 		Sys_XboxLog("Xbox NV2A: texture pool full, skipped %s\n", name);
 		return 0;
 	}
-	for (pixel = 0; !highColor && pixel < (size_t)width * (size_t)height; ++pixel) {
+	for (pixel = 0; pixel < (size_t)width * (size_t)height; ++pixel) {
 		if (rgba[pixel * 4 + 3] != 255) {
-			format = XGU_TEXTURE_FORMAT_A4R4G4B4_SWIZZLED;
+			format = highColor ? XGU_TEXTURE_FORMAT_A8R8G8B8_SWIZZLED :
+				XGU_TEXTURE_FORMAT_A4R4G4B4_SWIZZLED;
 			break;
 		}
 	}
@@ -452,7 +535,7 @@ static int XboxNV2AAddImage(const char *name, int width, int height,
 				(unsigned int)y, (unsigned int)width, (unsigned int)height);
 
 			if (highColor)
-				((uint32_t *)image->memory)[swizzled] = 0xff000000u |
+				((uint32_t *)image->memory)[swizzled] = ((uint32_t)texel[3] << 24) |
 					((uint32_t)texel[0] << 16) | ((uint32_t)texel[1] << 8) | texel[2];
 			else
 				((uint16_t *)image->memory)[swizzled] = XboxNV2APackTexel(texel, format);
@@ -488,6 +571,12 @@ int XboxNV2A_CreateImage(const char *name, int width, int height,
 	return index ? index : XboxNV2AAddImage(name, width, height, rgba, highColor);
 }
 
+/* ioq3 keeps stageless shaders only for skies (here: with an outer box) and fog volumes. */
+static qboolean XboxNV2AShaderUsable(const XboxNV2AShader *shader)
+{
+	return shader->numStages > 0 || shader->isFog || (shader->isSky && shader->skyBox[0] > 0);
+}
+
 /* Unresolved names are kept without stages so the loader does not retry them. */
 qboolean XboxNV2A_FindShader(const char *name, int flavor, qhandle_t *handle)
 {
@@ -496,7 +585,7 @@ qboolean XboxNV2A_FindShader(const char *name, int flavor, qhandle_t *handle)
 	for (index = XBOX_NV2A_WHITE_SHADER; index < xboxNV2AShaderCount; ++index) {
 		if (xboxNV2AShaders[index].flavor == flavor &&
 			!Q_stricmp(xboxNV2AShaders[index].name, name)) {
-			*handle = xboxNV2AShaders[index].numStages ? (qhandle_t)index : 0;
+			*handle = XboxNV2AShaderUsable(&xboxNV2AShaders[index]) ? (qhandle_t)index : 0;
 			return qtrue;
 		}
 	}
@@ -520,7 +609,18 @@ qhandle_t XboxNV2A_CreateShader(const char *name, int flavor,
 	shader->flavor = flavor;
 	shader->sort = def->sort;
 	shader->cull = def->cull;
+	shader->polygonOffset = def->polygonOffset;
 	shader->isSky = def->isSky;
+	shader->cloudHeight = def->cloudHeight;
+	shader->isFog = def->isFog;
+	VectorCopy(def->fogColor, shader->fogColor);
+	shader->fogDepth = def->fogDepth;
+	shader->fogPass = def->fogPass;
+	shader->portalRange = def->portalRange;
+	for (i = 0; i < XBOX_NV2A_SKY_SIDES; ++i) {
+		if (def->skyBox[i] > 0 && (unsigned int)def->skyBox[i] < xboxNV2AImageCount)
+			shader->skyBox[i] = def->skyBox[i];
+	}
 	if (def->numStages > 0)
 		shader->stages = (xboxNV2AStage_t *)malloc(
 			(size_t)def->numStages * sizeof(*shader->stages));
@@ -539,14 +639,34 @@ qhandle_t XboxNV2A_CreateShader(const char *name, int flavor,
 		}
 	}
 	xboxNV2AShaderCount++;
-	return shader->numStages ? (qhandle_t)(xboxNV2AShaderCount - 1) : 0;
+	return XboxNV2AShaderUsable(shader) ? (qhandle_t)(xboxNV2AShaderCount - 1) : 0;
 }
 
-/* The sky box is not drawn yet, so sky surfaces are left out like unresolved ones. */
+/* Sky surfaces only mark the sky box; a stageless fog shader draws its fog pass. */
 qboolean XboxNV2A_ShaderIsDrawable(qhandle_t shader)
 {
 	return shader > 0 && (unsigned int)shader < xboxNV2AShaderCount &&
-		xboxNV2AShaders[shader].numStages && !xboxNV2AShaders[shader].isSky;
+		(xboxNV2AShaders[shader].numStages || xboxNV2AShaders[shader].isFog) &&
+		!xboxNV2AShaders[shader].isSky;
+}
+
+/* ioq3 R_LoadFogs reads fogParms from the fog shader; a missing shader gives black fog. */
+qboolean XboxNV2A_ShaderFogParms(qhandle_t shader, vec3_t color, float *depth)
+{
+	if (shader <= 0 || (unsigned int)shader >= xboxNV2AShaderCount) {
+		VectorClear(color);
+		*depth = 0.0f;
+		return qfalse;
+	}
+	VectorCopy(xboxNV2AShaders[shader].fogColor, color);
+	*depth = xboxNV2AShaders[shader].fogDepth;
+	return qtrue;
+}
+
+qboolean XboxNV2A_ShaderIsSky(qhandle_t shader)
+{
+	return shader > 0 && (unsigned int)shader < xboxNV2AShaderCount &&
+		xboxNV2AShaders[shader].isSky && XboxNV2AShaderUsable(&xboxNV2AShaders[shader]);
 }
 
 int XboxNV2A_ShaderCull(qhandle_t shader)
@@ -570,6 +690,43 @@ static void XboxNV2AFreeCinematics(void)
 	}
 }
 
+/* ioq3 R_FogFactor: s grows with view depth in fog, t with depth below the fog surface. */
+static float XboxNV2AFogFactor(float s, float t)
+{
+	s -= 1.0f / 512;
+	if (s < 0.0f || t < 1.0f / 32)
+		return 0.0f;
+	if (t < 31.0f / 32)
+		s *= (t - 1.0f / 32) / (30.0f / 32);
+	/* ioq3 leaves a lot of clamp range. */
+	s *= 8;
+	if (s > 1.0f)
+		s = 1.0f;
+	return xboxNV2AFogTable[(int)(s * (XBOX_NV2A_FOG_TABLE_SIZE - 1))];
+}
+
+/* ioq3 R_CreateFogImage: white texels whose alpha is the fog factor. */
+static int XboxNV2ACreateFogImage(void)
+{
+	byte *data = (byte *)malloc(XBOX_NV2A_FOG_S * XBOX_NV2A_FOG_T * 4);
+	int image, x, y;
+
+	if (!data)
+		return 0;
+	for (y = 0; y < XBOX_NV2A_FOG_T; ++y) {
+		for (x = 0; x < XBOX_NV2A_FOG_S; ++x) {
+			byte *texel = data + (y * XBOX_NV2A_FOG_S + x) * 4;
+
+			texel[0] = texel[1] = texel[2] = 255;
+			texel[3] = (byte)(255 * XboxNV2AFogFactor((x + 0.5f) / XBOX_NV2A_FOG_S,
+				(y + 0.5f) / XBOX_NV2A_FOG_T));
+		}
+	}
+	image = XboxNV2AAddImage("*fog", XBOX_NV2A_FOG_S, XBOX_NV2A_FOG_T, data, qtrue);
+	free(data);
+	return image;
+}
+
 static void XboxNV2AResetTextures(void)
 {
 	static const byte whitePixel[4] = {255, 255, 255, 255};
@@ -587,6 +744,7 @@ static void XboxNV2AResetTextures(void)
 	xboxNV2AShaderCount = XBOX_NV2A_WHITE_SHADER;
 	xboxNV2ATexturePoolUsed = 0;
 	XboxNV2AAddImage("*white", 1, 1, whitePixel, qfalse);
+	xboxNV2AFogImage = XboxNV2ACreateFogImage();
 
 	memset(&white, 0, sizeof(white));
 	white.numStages = 1;
@@ -649,6 +807,48 @@ static void XboxNV2ACalcDiffuseColor(void)
 			tess->stageColor[i][k] = (byte)(light > 255.0f ? 255 : (int)light);
 		}
 		tess->stageColor[i][3] = 255;
+	}
+}
+
+/* ioq3 RB_CalcFogTexCoords in world space: s is view depth, t depth below the fog surface. */
+static void XboxNV2ACalcFogTexCoords(float (*st)[2])
+{
+	const XboxNV2ATess *tess = &xboxNV2ATess;
+	const xboxNV2AFog_t *fog = XboxNV2AWorld_Fog(tess->fogIndex);
+	const refEntity_t *model = tess->entity && tess->entity->reType == RT_MODEL ?
+		tess->entity : NULL;
+	float eyeT = 1.0f;
+	float eyeDepth = DotProduct(xboxNV2AViewOrigin, xboxNV2AViewForward);
+	int i;
+
+	if (!fog) {
+		memset(st, 0, (size_t)tess->numVerts * sizeof(st[0]));
+		return;
+	}
+	/* Fog without a visible surface always has the eye inside. */
+	if (fog->hasSurface)
+		eyeT = DotProduct(xboxNV2AViewOrigin, fog->surface) - fog->surface[3];
+	for (i = 0; i < tess->numVerts; ++i) {
+		vec3_t world;
+		float t = 0.0f;
+
+		if (model) {
+			VectorCopy(model->origin, world);
+			VectorMA(world, tess->xyz[i][0], model->axis[0], world);
+			VectorMA(world, tess->xyz[i][1], model->axis[1], world);
+			VectorMA(world, tess->xyz[i][2], model->axis[2], world);
+		} else {
+			VectorCopy(tess->xyz[i], world);
+		}
+		if (fog->hasSurface)
+			t = DotProduct(world, fog->surface) - fog->surface[3];
+		/* An eye outside the fog only counts the part of the ray below the fog plane. */
+		if (eyeT < 0.0f)
+			t = t < 1.0f ? 1.0f / 32 : 1.0f / 32 + 30.0f / 32 * t / (t - eyeT);
+		else
+			t = t < 0.0f ? 1.0f / 32 : 31.0f / 32;
+		st[i][0] = (DotProduct(world, xboxNV2AViewForward) - eyeDepth) * fog->tcScale + 1.0f / 512;
+		st[i][1] = t;
 	}
 }
 
@@ -744,6 +944,36 @@ static void XboxNV2AComputeColors(const xboxNV2AStage_t *stage)
 		for (i = 0; i < n; ++i)
 			tess->stageColor[i][3] = 255 - tess->color[i][3];
 		break;
+	case XBOX_NV2A_ALPHAGEN_PORTAL: {
+		/* Transparent up close, opaque at portalRange and beyond. */
+		float range = xboxNV2AShaders[tess->shader].portalRange;
+
+		for (i = 0; i < n; ++i) {
+			vec3_t v;
+			float len;
+
+			VectorSubtract(tess->xyz[i], tess->viewOrigin, v);
+			len = range > 0.0f ? VectorLength(v) / range : 1.0f;
+			tess->stageColor[i][3] = len > 1.0f ? 255 : (byte)(len * 255);
+		}
+		break;
+	}
+	}
+
+	/* ioq3 RB_CalcModulate*ByFog; stageSt is scratch until the texcoords are computed. */
+	if (tess->fogIndex && stage->adjustColorsForFog != XBOX_NV2A_ACFF_NONE) {
+		XboxNV2ACalcFogTexCoords(tess->stageSt);
+		for (i = 0; i < n; ++i) {
+			float f = 1.0f - XboxNV2AFogFactor(tess->stageSt[i][0], tess->stageSt[i][1]);
+
+			if (stage->adjustColorsForFog != XBOX_NV2A_ACFF_MODULATE_ALPHA) {
+				tess->stageColor[i][0] = (byte)(tess->stageColor[i][0] * f);
+				tess->stageColor[i][1] = (byte)(tess->stageColor[i][1] * f);
+				tess->stageColor[i][2] = (byte)(tess->stageColor[i][2] * f);
+			}
+			if (stage->adjustColorsForFog != XBOX_NV2A_ACFF_MODULATE_RGB)
+				tess->stageColor[i][3] = (byte)(tess->stageColor[i][3] * f);
+		}
 	}
 }
 
@@ -900,52 +1130,71 @@ static void XboxNV2AWriteVertex(XboxNV2AColoredVertex *out, int v)
 	out->texcoord[1] = tess->stageSt[v][1];
 }
 
-/* The point where edge a-b crosses the near plane, with every attribute interpolated. */
-static void XboxNV2AWriteNearVertex(XboxNV2AColoredVertex *out, int a, int b)
-{
-	const XboxNV2ATess *tess = &xboxNV2ATess;
-	float t = tess->nearDist[a] / (tess->nearDist[a] - tess->nearDist[b]);
-	int k;
+/* A clip polygon corner: the streamed vertex plus its near and portal plane distances. */
+typedef struct {
+	XboxNV2AColoredVertex v;
+	float dist[2];
+} XboxNV2AClipVertex;
 
-	for (k = 0; k < 3; ++k)
-		out->position[k] = tess->xyz[a][k] + t * (tess->xyz[b][k] - tess->xyz[a][k]);
-	for (k = 0; k < 4; ++k)
-		out->color[k] = (tess->stageColor[a][k] + t * ((float)tess->stageColor[b][k] -
-			tess->stageColor[a][k])) * (1.0f / 255.0f);
-	for (k = 0; k < 2; ++k)
-		out->texcoord[k] = tess->stageSt[a][k] + t * (tess->stageSt[b][k] - tess->stageSt[a][k]);
-}
-
-/* Sutherland-Hodgman against the near plane; the kept polygon is fanned into 1 or 2 triangles. */
+/* Sutherland-Hodgman against the near plane, then a portal view's plane; the rest is fanned. */
 static unsigned int XboxNV2AClipTriangle(const unsigned short *triangle,
 	XboxNV2AColoredVertex *out)
 {
 	const XboxNV2ATess *tess = &xboxNV2ATess;
-	XboxNV2AColoredVertex polygon[4];
-	unsigned int count = 0;
-	int k;
+	XboxNV2AClipVertex polygons[2][XBOX_NV2A_CLIP_VERTS];
+	int planes = xboxNV2AViewIsPortal ? 2 : 1;
+	int count = 3;
+	int current = 0;
+	int p, k, j;
 
 	for (k = 0; k < 3; ++k) {
-		int a = triangle[k];
-		int b = triangle[(k + 1) % 3];
-		qboolean aInside = tess->nearDist[a] >= 0.0f;
-
-		if (aInside)
-			XboxNV2AWriteVertex(&polygon[count++], a);
-		if (aInside != (tess->nearDist[b] >= 0.0f))
-			XboxNV2AWriteNearVertex(&polygon[count++], a, b);
+		XboxNV2AWriteVertex(&polygons[0][k].v, triangle[k]);
+		polygons[0][k].dist[0] = tess->nearDist[triangle[k]];
+		polygons[0][k].dist[1] = planes > 1 ? tess->portalDist[triangle[k]] : 0.0f;
 	}
-	if (count < 3)
-		return 0;
-	out[0] = polygon[0];
-	out[1] = polygon[1];
-	out[2] = polygon[2];
-	if (count == 3)
-		return 3;
-	out[3] = polygon[0];
-	out[4] = polygon[2];
-	out[5] = polygon[3];
-	return 6;
+	for (p = 0; p < planes; ++p) {
+		const XboxNV2AClipVertex *in = polygons[current];
+		XboxNV2AClipVertex *clipped = polygons[!current];
+		int kept = 0;
+
+		for (k = 0; k < count; ++k) {
+			const XboxNV2AClipVertex *a = &in[k];
+			const XboxNV2AClipVertex *b = &in[(k + 1) % count];
+			qboolean aInside = a->dist[p] >= 0.0f;
+
+			if (aInside)
+				clipped[kept++] = *a;
+			if (aInside != (b->dist[p] >= 0.0f)) {
+				XboxNV2AClipVertex *c = &clipped[kept++];
+				float t = a->dist[p] / (a->dist[p] - b->dist[p]);
+
+				for (j = 0; j < 3; ++j)
+					c->v.position[j] = a->v.position[j] + t * (b->v.position[j] - a->v.position[j]);
+				for (j = 0; j < 4; ++j)
+					c->v.color[j] = a->v.color[j] + t * (b->v.color[j] - a->v.color[j]);
+				for (j = 0; j < 2; ++j) {
+					c->v.texcoord[j] = a->v.texcoord[j] + t * (b->v.texcoord[j] - a->v.texcoord[j]);
+					c->dist[j] = a->dist[j] + t * (b->dist[j] - a->dist[j]);
+				}
+			}
+		}
+		count = kept;
+		current = !current;
+		if (count < 3)
+			return 0;
+	}
+	for (k = 1; k + 1 < count; ++k) {
+		out[(k - 1) * 3 + 0] = polygons[current][0].v;
+		out[(k - 1) * 3 + 1] = polygons[current][k].v;
+		out[(k - 1) * 3 + 2] = polygons[current][k + 1].v;
+	}
+	return (unsigned int)(3 * (count - 2));
+}
+
+static qboolean XboxNV2AVertexClipped(int v)
+{
+	return xboxNV2ATess.nearDist[v] < 0.0f ||
+		(xboxNV2AViewIsPortal && xboxNV2ATess.portalDist[v] < 0.0f);
 }
 
 /* Triangles stream in chunks; a full stream is drawn, then rewound once the GPU is idle. */
@@ -958,10 +1207,10 @@ static void XboxNV2ADrawTriangles(void)
 
 	for (i = 0; i + 2 < tess->numIndexes; i += 3) {
 		const unsigned short *triangle = &tess->indexes[i];
-		XboxNV2AColoredVertex clipped[6];
+		XboxNV2AColoredVertex clipped[3 * (XBOX_NV2A_CLIP_VERTS - 2)];
 		unsigned int count = 3;
-		qboolean crosses = tess->clipNear && (tess->nearDist[triangle[0]] < 0.0f ||
-			tess->nearDist[triangle[1]] < 0.0f || tess->nearDist[triangle[2]] < 0.0f);
+		qboolean crosses = tess->clip && (XboxNV2AVertexClipped(triangle[0]) ||
+			XboxNV2AVertexClipped(triangle[1]) || XboxNV2AVertexClipped(triangle[2]));
 		XboxNV2AColoredVertex *out;
 
 		if (crosses) {
@@ -991,18 +1240,24 @@ static void XboxNV2ADrawTriangles(void)
 	xboxNV2AVertexUsed = first + written;
 }
 
-/* Draws one stage: 2D tess holds quads in order, 3D tess holds indexed triangles. */
-static void XboxNV2ADrawStage(const xboxNV2AStage_t *stage, int cull)
+/* Draws the computed stage colours and texcoords; a mirror view flips the culled side. */
+static void XboxNV2ASubmitStage(const xboxNV2AStage_t *stage, int image, int cull,
+	qboolean polygonOffset)
 {
 	XboxNV2ATess *tess = &xboxNV2ATess;
+	xboxNV2AStage_t skyStage;
 	XboxNV2AColoredVertex *out;
 	unsigned int count = (unsigned int)tess->numVerts;
 	unsigned int i;
 
-	XboxNV2AComputeColors(stage);
-	XboxNV2AComputeTexCoords(stage);
-	XboxNV2AApplyStageState(stage, XboxNV2AStageImage(stage, tess->shaderTime),
-		tess->is3D, cull);
+	if (tess->isSky && stage->depthWrite) {
+		skyStage = *stage;
+		skyStage.depthWrite = qfalse;
+		stage = &skyStage;
+	}
+	if (xboxNV2AViewIsMirror && cull != XBOX_NV2A_CULL_NONE)
+		cull = cull == XBOX_NV2A_CULL_FRONT ? XBOX_NV2A_CULL_BACK : XBOX_NV2A_CULL_FRONT;
+	XboxNV2AApplyStageState(stage, image, tess->is3D, tess->is3D, cull, polygonOffset);
 	if (tess->is3D) {
 		XboxNV2ADrawTriangles();
 		return;
@@ -1014,11 +1269,48 @@ static void XboxNV2ADrawStage(const xboxNV2AStage_t *stage, int cull)
 	xboxNV2AVertexUsed += count;
 }
 
-/* Returns qfalse when the whole 3D batch lies behind the near plane. */
+/* Draws one stage: 2D tess holds quads in order, 3D tess holds indexed triangles. */
+static void XboxNV2ADrawStage(const xboxNV2AStage_t *stage, int cull, qboolean polygonOffset)
+{
+	XboxNV2AComputeColors(stage);
+	XboxNV2AComputeTexCoords(stage);
+	XboxNV2ASubmitStage(stage, XboxNV2AStageImage(stage, xboxNV2ATess.shaderTime), cull,
+		polygonOffset);
+}
+
+/* ioq3 RB_FogPass: the fog image blended over the surface; opaque shaders need equal depth. */
+static void XboxNV2AFogPass(const XboxNV2AShader *shader)
+{
+	XboxNV2ATess *tess = &xboxNV2ATess;
+	const xboxNV2AFog_t *fog = XboxNV2AWorld_Fog(tess->fogIndex);
+	xboxNV2AStage_t stage;
+	int i;
+
+	if (!fog || !xboxNV2AFogImage)
+		return;
+	/* DIAGNOSTIC: the first fog pass, for the hardware test log. */
+	if (!(xboxNV2ATracedTypes & (1u << 28))) {
+		xboxNV2ATracedTypes |= 1u << 28;
+		Sys_XboxLog("Xbox NV2A: frame %u first fog pass, fog %d shader %s\n",
+			xboxNV2AFrameCount, tess->fogIndex, shader->name);
+	}
+	memset(&stage, 0, sizeof(stage));
+	stage.clamp = qtrue;
+	stage.srcBlend = GL_SRC_ALPHA;
+	stage.dstBlend = GL_ONE_MINUS_SRC_ALPHA;
+	stage.depthEqual = shader->fogPass == XBOX_NV2A_FOGPASS_EQUAL;
+	for (i = 0; i < tess->numVerts; ++i)
+		memcpy(tess->stageColor[i], fog->color, 4);
+	XboxNV2ACalcFogTexCoords(tess->stageSt);
+	XboxNV2ASubmitStage(&stage, xboxNV2AFogImage, shader->cull, shader->polygonOffset);
+}
+
+/* Near-plane distances, plus the portal plane's in a mirror view; qfalse if nothing is left. */
 static qboolean XboxNV2AComputeNearDistances(void)
 {
 	XboxNV2ATess *tess = &xboxNV2ATess;
-	int behind = 0;
+	int behindNear = 0;
+	int behindPortal = 0;
 	int i;
 
 	for (i = 0; i < tess->numVerts; ++i) {
@@ -1026,10 +1318,16 @@ static qboolean XboxNV2AComputeNearDistances(void)
 			tess->xyz[i][1] * xboxNV2ANearPlane[1] +
 			tess->xyz[i][2] * xboxNV2ANearPlane[2] + xboxNV2ANearPlane[3];
 		if (tess->nearDist[i] < 0.0f)
-			++behind;
+			++behindNear;
+		if (xboxNV2AViewIsPortal) {
+			tess->portalDist[i] = DotProduct(tess->xyz[i], xboxNV2APortalPlaneLocal) -
+				xboxNV2APortalPlaneLocal[3];
+			if (tess->portalDist[i] < 0.0f)
+				++behindPortal;
+		}
 	}
-	tess->clipNear = behind > 0;
-	return behind < tess->numVerts;
+	tess->clip = behindNear > 0 || behindPortal > 0;
+	return behindNear < tess->numVerts && behindPortal < tess->numVerts;
 }
 
 static void XboxNV2AEndSurface(void)
@@ -1048,7 +1346,9 @@ static void XboxNV2AEndSurface(void)
 				xboxNV2AImages[shader->stages[0].images[0]].width,
 				xboxNV2AImages[shader->stages[0].images[0]].height);
 		for (i = 0; i < shader->numStages; ++i)
-			XboxNV2ADrawStage(&shader->stages[i], shader->cull);
+			XboxNV2ADrawStage(&shader->stages[i], shader->cull, shader->polygonOffset);
+		if (tess->is3D && tess->fogIndex && shader->fogPass != XBOX_NV2A_FOGPASS_NONE)
+			XboxNV2AFogPass(shader);
 	}
 	tess->shader = 0;
 	tess->lightmap = 0;
@@ -1105,6 +1405,9 @@ static void XboxNV2ASetFrameState(void)
 	p = xgu_set_stencil_test_enable(p, false);
 	p = xgu_set_alpha_test_enable(p, false);
 	p = xgu_set_blend_enable(p, true);
+	p = push_command_float(p, NV097_SET_POLYGON_OFFSET_SCALE_FACTOR,
+		XBOX_NV2A_POLYGON_OFFSET_FACTOR);
+	p = push_command_float(p, NV097_SET_POLYGON_OFFSET_BIAS, XBOX_NV2A_POLYGON_OFFSET_UNITS);
 	pb_end(p);
 	XboxNV2AInvalidateState();
 	XboxNV2ASetTransform(xboxNV2AScreenMatrix.col, qtrue);
@@ -1188,6 +1491,7 @@ qboolean XboxNV2A_Init(void)
 	/* The xgu samples' z-buffer precision fixup. */
 	xgux_set_depth_range(0.0f, XBOX_NV2A_ZMAX);
 
+	xboxNV2AFastSky = Cvar_Get("r_fastsky", "0", CVAR_ARCHIVE);
 	xboxNV2AInitialized = qtrue;
 	XboxNV2AResetTextures();
 	xboxNV2ADebugScreen = qfalse;
@@ -1217,6 +1521,9 @@ void XboxNV2A_Shutdown(qboolean destroyWindow)
 	xboxNV2ASceneFirstEntity = 0;
 	xboxNV2ADlightCount = 0;
 	xboxNV2ASceneFirstDlight = 0;
+	xboxNV2APolyCount = 0;
+	xboxNV2APolyVertCount = 0;
+	xboxNV2ASceneFirstPoly = 0;
 }
 
 void XboxNV2A_Kill(void)
@@ -1306,7 +1613,7 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 
 		memcpy(v, xboxNV2ATriangle, sizeof(xboxNV2ATriangle));
 		XboxNV2AApplyStageState(&xboxNV2AShaders[XBOX_NV2A_WHITE_SHADER].stages[0],
-			XBOX_NV2A_WHITE_IMAGE, qfalse, XBOX_NV2A_CULL_NONE);
+			XBOX_NV2A_WHITE_IMAGE, qfalse, qfalse, XBOX_NV2A_CULL_NONE, qfalse);
 		XboxNV2ADrawVertices(XGU_TRIANGLES, xboxNV2AVertexUsed,
 			XBOX_NV2A_TRIANGLE_VERTS);
 		xboxNV2AVertexUsed += XBOX_NV2A_TRIANGLE_VERTS;
@@ -1325,11 +1632,14 @@ void XboxNV2A_EndFrame(int *frontEndMsec, int *backEndMsec)
 		return;
 
 	XboxNV2AEndSurface();
-	/* ioq3 R_InitNextFrame: scene entities and dlights last one frame. */
+	/* ioq3 R_InitNextFrame: scene entities, dlights and polys last one frame. */
 	xboxNV2ASceneEntityCount = 0;
 	xboxNV2ASceneFirstEntity = 0;
 	xboxNV2ADlightCount = 0;
 	xboxNV2ASceneFirstDlight = 0;
+	xboxNV2APolyCount = 0;
+	xboxNV2APolyVertCount = 0;
+	xboxNV2ASceneFirstPoly = 0;
 	xboxNV2AInFrame = qfalse;
 	XboxNV2AWaitIdle("end frame");
 	if (XBOX_NV2A_DIAGNOSTICS)
@@ -1374,6 +1684,7 @@ void XboxNV2A_DrawStretchPic(float x, float y, float w, float h,
 			XboxNV2ASetTransform(xboxNV2AScreenMatrix.col, qtrue);
 		tess->shader = shader;
 		tess->is3D = qfalse;
+		tess->fogIndex = 0;
 		tess->entity = NULL;
 		tess->shaderTime = Sys_Milliseconds() * 0.001;
 	}
@@ -1480,8 +1791,8 @@ void XboxNV2A_DrawStretchRaw(int x, int y, int w, int h, int cols, int rows,
 	stage.clamp = qtrue;
 	stage.srcBlend = GL_ONE;
 	stage.dstBlend = GL_ZERO;
-	XboxNV2AApplyStageState(&stage, XBOX_NV2A_MAX_IMAGES + client, qfalse,
-		XBOX_NV2A_CULL_NONE);
+	XboxNV2AApplyStageState(&stage, XBOX_NV2A_MAX_IMAGES + client, qfalse, qfalse,
+		XBOX_NV2A_CULL_NONE, qfalse);
 
 	s1 = 0.5f / cols;
 	t1 = 0.5f / rows;
@@ -1506,6 +1817,7 @@ void XboxNV2A_ClearScene(void)
 {
 	xboxNV2ASceneFirstEntity = xboxNV2ASceneEntityCount;
 	xboxNV2ASceneFirstDlight = xboxNV2ADlightCount;
+	xboxNV2ASceneFirstPoly = xboxNV2APolyCount;
 }
 
 void XboxNV2A_AddRefEntity(const refEntity_t *entity)
@@ -1529,8 +1841,44 @@ void XboxNV2A_AddLight(const vec3_t origin, float intensity, float r, float g,
 	VectorSet(light->color, r, g, b);
 }
 
+/* ioq3 RE_AddPolyToScene: polys last one frame and use the world transform. */
+void XboxNV2A_AddPoly(qhandle_t shader, int numVerts, const polyVert_t *verts,
+	int numPolys)
+{
+	int i;
+
+	if (!xboxNV2AInitialized || !verts || numVerts < 3)
+		return;
+	for (i = 0; i < numPolys; ++i) {
+		XboxNV2APoly *poly;
+
+		if (xboxNV2APolyVertCount + numVerts > XBOX_NV2A_MAX_POLYVERTS ||
+			xboxNV2APolyCount >= XBOX_NV2A_MAX_POLYS)
+			return;
+		poly = &xboxNV2APolys[xboxNV2APolyCount++];
+		poly->shader = shader;
+		poly->numVerts = numVerts;
+		poly->verts = &xboxNV2APolyVerts[xboxNV2APolyVertCount];
+		memcpy(&xboxNV2APolyVerts[xboxNV2APolyVertCount], &verts[numVerts * i],
+			(size_t)numVerts * sizeof(*verts));
+		xboxNV2APolyVertCount += numVerts;
+	}
+}
+
+/* DIAGNOSTIC: logs the first surface of each generated type for the hardware test. */
+static void XboxNV2ATraceSurfaceType(int bit, const char *kind, int shader)
+{
+	if (xboxNV2ATracedTypes & (1u << bit))
+		return;
+	xboxNV2ATracedTypes |= 1u << bit;
+	Sys_XboxLog("Xbox NV2A: frame %u first %s, shader %s drawable=%d\n", xboxNV2AFrameCount,
+		kind, shader > 0 && (unsigned int)shader < xboxNV2AShaderCount ?
+		xboxNV2AShaders[shader].name : "none", XboxNV2A_ShaderIsDrawable(shader));
+}
+
 static void XboxNV2AAddDrawSurf(const md3Surface_t *md3,
-	const xboxNV2AWorldSurface_t *world, int entity, int shader, int lightmap)
+	const xboxNV2AWorldSurface_t *world, const XboxNV2APoly *poly, int entity, int shader,
+	int lightmap, int fogIndex)
 {
 	XboxNV2ADrawSurf *drawSurf;
 
@@ -1544,16 +1892,42 @@ static void XboxNV2AAddDrawSurf(const md3Surface_t *md3,
 	drawSurf = &xboxNV2ADrawSurfs[xboxNV2ADrawSurfCount];
 	drawSurf->md3 = md3;
 	drawSurf->world = world;
+	drawSurf->poly = poly;
 	drawSurf->entity = entity;
 	drawSurf->shader = shader;
 	drawSurf->lightmap = lightmap;
+	drawSurf->fogIndex = fogIndex;
 	drawSurf->sort = xboxNV2AShaders[shader].sort;
 	drawSurf->order = xboxNV2ADrawSurfCount++;
 }
 
 void XboxNV2A_AddWorldSurface(const xboxNV2AWorldSurface_t *surface, int entity)
 {
-	XboxNV2AAddDrawSurf(NULL, surface, entity, surface->shader, surface->lightmap);
+	XboxNV2AAddDrawSurf(NULL, surface, NULL, entity, surface->shader, surface->lightmap,
+		surface->fogIndex);
+}
+
+/* Skies stay in ascending shader order, the order ioq3's sort keys draw them in. */
+void XboxNV2A_AddSkySurface(const xboxNV2AWorldSurface_t *surface)
+{
+	XboxNV2ASky *sky = NULL;
+	int i;
+
+	for (i = 0; i < xboxNV2ASkyCount && !sky; ++i) {
+		if (xboxNV2ASkies[i].shader == surface->shader)
+			sky = &xboxNV2ASkies[i];
+	}
+	if (!sky) {
+		if (xboxNV2ASkyCount >= XBOX_NV2A_MAX_SKIES)
+			return;
+		for (i = xboxNV2ASkyCount; i > 0 && xboxNV2ASkies[i - 1].shader > surface->shader; --i)
+			xboxNV2ASkies[i] = xboxNV2ASkies[i - 1];
+		sky = &xboxNV2ASkies[i];
+		sky->shader = surface->shader;
+		XboxNV2ASky_Clear(&sky->bounds);
+		xboxNV2ASkyCount++;
+	}
+	XboxNV2ASky_AddSurface(&sky->bounds, surface, xboxNV2ASkyOrigin);
 }
 
 /* ioq3 R_AddMD3Surfaces shader choice: customShader, then customSkin, then the MD3 list. */
@@ -1572,18 +1946,103 @@ static int XboxNV2AMD3SurfaceShader(const refEntity_t *entity,
 	return shaders[entity->skinNum >= 0 ? entity->skinNum % surface->numShaders : 0].shaderIndex;
 }
 
-static void XboxNV2AAddEntitySurfaces(void)
+/* ioq3 R_SpriteFogNum and R_ComputeFogNum: the first fog volume the sphere is inside. */
+static int XboxNV2AFogForSphere(const refdef_t *fd, const vec3_t origin, float radius)
 {
+	int i, j;
+
+	if (fd->rdflags & RDF_NOWORLDMODEL)
+		return 0;
+	for (i = 1; i < XboxNV2AWorld_NumFogs(); ++i) {
+		const xboxNV2AFog_t *fog = XboxNV2AWorld_Fog(i);
+
+		for (j = 0; j < 3; ++j) {
+			if (origin[j] - radius >= fog->bounds[1][j] ||
+				origin[j] + radius <= fog->bounds[0][j])
+				break;
+		}
+		if (j == 3)
+			return i;
+	}
+	return 0;
+}
+
+/* ioq3 RE_AddPolyToScene: the first fog volume whose bounds touch the poly's. */
+static int XboxNV2AFogForPoly(const XboxNV2APoly *poly)
+{
+	vec3_t bounds[2];
+	int i;
+
+	VectorCopy(poly->verts[0].xyz, bounds[0]);
+	VectorCopy(poly->verts[0].xyz, bounds[1]);
+	for (i = 1; i < poly->numVerts; ++i)
+		AddPointToBounds(poly->verts[i].xyz, bounds[0], bounds[1]);
+	for (i = 1; i < XboxNV2AWorld_NumFogs(); ++i) {
+		const xboxNV2AFog_t *fog = XboxNV2AWorld_Fog(i);
+
+		if (bounds[1][0] >= fog->bounds[0][0] && bounds[1][1] >= fog->bounds[0][1] &&
+			bounds[1][2] >= fog->bounds[0][2] && bounds[0][0] <= fog->bounds[1][0] &&
+			bounds[0][1] <= fog->bounds[1][1] && bounds[0][2] <= fog->bounds[1][2])
+			return i;
+	}
+	return 0;
+}
+
+/* ioq3 R_AddPolygonSurfaces: every scene poly is a world-entity draw surface. */
+static void XboxNV2AAddPolySurfaces(void)
+{
+	int i;
+
+	for (i = xboxNV2ASceneFirstPoly; i < xboxNV2APolyCount; ++i) {
+		const XboxNV2APoly *poly = &xboxNV2APolys[i];
+
+		XboxNV2ATraceSurfaceType(XBOX_NV2A_TRACE_POLY, "poly", poly->shader);
+		if (XboxNV2A_ShaderIsDrawable(poly->shader))
+			XboxNV2AAddDrawSurf(NULL, NULL, poly, XBOX_NV2A_WORLD_ENTITY, poly->shader, 0,
+				XboxNV2AFogForPoly(poly));
+	}
+}
+
+static void XboxNV2AAddEntitySurfaces(const refdef_t *fd)
+{
+	static const char *kinds[] = {"model", "poly entity", "sprite", "beam", "rail core",
+		"rail rings", "lightning"};
 	int e, s;
 
 	for (e = xboxNV2ASceneFirstEntity; e < xboxNV2ASceneEntityCount; ++e) {
 		refEntity_t *entity = &xboxNV2ASceneEntities[e];
 		const md3Header_t *md3;
 		const md3Surface_t *surface;
-		int brush;
+		const md3Frame_t *frame;
+		vec3_t localOrigin;
+		int brush, fogIndex;
 
-		if (entity->reType != RT_MODEL)
+		/* ioq3: the first-person weapon never shows in a mirror or portal view. */
+		if ((entity->renderfx & RF_FIRST_PERSON) && xboxNV2AViewIsPortal)
 			continue;
+		switch (entity->reType) {
+		case RT_SPRITE:
+		case RT_BEAM:
+		case RT_LIGHTNING:
+		case RT_RAIL_CORE:
+		case RT_RAIL_RINGS:
+			/* ioq3 R_AddEntitySurfaces: one generated surface, never culled; RF_THIRD_PERSON hides it. */
+			XboxNV2ATraceSurfaceType(entity->reType, kinds[entity->reType], entity->customShader);
+			if ((entity->renderfx & RF_THIRD_PERSON) && !xboxNV2AViewIsPortal)
+				continue;
+			fogIndex = (entity->renderfx & RF_CROSSHAIR) ? 0 :
+				XboxNV2AFogForSphere(fd, entity->origin, entity->radius);
+			/* RT_BEAM ignores its shader, as ioq3 RB_SurfaceBeam draws it straight to GL. */
+			if (XboxNV2A_ShaderIsDrawable(entity->customShader))
+				XboxNV2AAddDrawSurf(NULL, NULL, NULL, e, entity->customShader, 0, fogIndex);
+			else if (entity->reType == RT_BEAM)
+				XboxNV2AAddDrawSurf(NULL, NULL, NULL, e, 0, 0, fogIndex);
+			continue;
+		case RT_MODEL:
+			break;
+		default:
+			continue;
+		}
 		brush = XboxNV2AModel_BrushIndex(entity->hModel);
 		if (brush >= 0) {
 			XboxNV2AWorld_AddBrushModel(brush, e);
@@ -1591,25 +2050,28 @@ static void XboxNV2AAddEntitySurfaces(void)
 		}
 		/* ioq3 R_AddMD3Surfaces: the player's own body only shows through portals. */
 		md3 = XboxNV2AModel_Get(entity->hModel);
-		if (!md3 || (entity->renderfx & RF_THIRD_PERSON))
+		if (!md3 || ((entity->renderfx & RF_THIRD_PERSON) && !xboxNV2AViewIsPortal))
 			continue;
 		if (entity->frame < 0 || entity->frame >= md3->numFrames ||
 			entity->oldframe < 0 || entity->oldframe >= md3->numFrames) {
 			entity->frame = 0;
 			entity->oldframe = 0;
 		}
+		frame = (const md3Frame_t *)((const byte *)md3 + md3->ofsFrames) + entity->frame;
+		VectorAdd(entity->origin, frame->localOrigin, localOrigin);
+		fogIndex = XboxNV2AFogForSphere(fd, localOrigin, frame->radius);
 		surface = (const md3Surface_t *)((const byte *)md3 + md3->ofsSurfaces);
 		for (s = 0; s < md3->numSurfaces; ++s) {
 			int shader = XboxNV2AMD3SurfaceShader(entity, surface);
 
 			if (XboxNV2A_ShaderIsDrawable(shader))
-				XboxNV2AAddDrawSurf(surface, NULL, e, shader, 0);
+				XboxNV2AAddDrawSurf(surface, NULL, NULL, e, shader, 0, fogIndex);
 			surface = (const md3Surface_t *)((const byte *)surface + surface->ofsEnd);
 		}
 	}
 }
 
-/* ioq3 sort key order: shader sort, shader, entity, then submission order. */
+/* ioq3 sort key order: shader sort, shader, entity, fog, then submission order. */
 static int XboxNV2ACompareDrawSurfs(const void *a, const void *b)
 {
 	const XboxNV2ADrawSurf *x = (const XboxNV2ADrawSurf *)a;
@@ -1623,6 +2085,8 @@ static int XboxNV2ACompareDrawSurfs(const void *a, const void *b)
 		return x->entity - y->entity;
 	if (x->lightmap != y->lightmap)
 		return x->lightmap - y->lightmap;
+	if (x->fogIndex != y->fogIndex)
+		return x->fogIndex - y->fogIndex;
 	return x->order - y->order;
 }
 
@@ -1640,7 +2104,8 @@ static void XboxNV2AMatrixMultiply(const float *a, const float *b, float *out)
 }
 
 /* ioq3 R_RotateForViewer * R_SetupProjection, then the xgu samples' viewport matrix. */
-static void XboxNV2ASetupView(const refdef_t *fd, float zFar, float *worldToScreen)
+static void XboxNV2ASetupView(const refdef_t *fd, float zFar, float *worldProjection,
+	float *worldToScreen)
 {
 	static const float flip[16] = {
 		0, 0, -1, 0,
@@ -1648,7 +2113,7 @@ static void XboxNV2ASetupView(const refdef_t *fd, float zFar, float *worldToScre
 		0, 1, 0, 0,
 		0, 0, 0, 1
 	};
-	float viewer[16], world[16], projection[16], viewport[16], worldProjection[16];
+	float viewer[16], world[16], projection[16], viewport[16];
 	float xmax = XBOX_NV2A_ZNEAR * tanf(fd->fov_x * (float)M_PI / 360.0f);
 	float ymax = XBOX_NV2A_ZNEAR * tanf(fd->fov_y * (float)M_PI / 360.0f);
 	float depth = zFar - XBOX_NV2A_ZNEAR;
@@ -1729,7 +2194,7 @@ static void XboxNV2ASetupEntityLighting(const refdef_t *fd, const refEntity_t *e
 		tess->lightDir[i] = DotProduct(lightDir, entity->axis[i]);
 }
 
-/* ioq3 R_RotateForEntity; the world entity keeps the plain view transform and no light. */
+/* ioq3 R_RotateForEntity; the world and non-model entities keep the view transform, unlit. */
 static void XboxNV2ASetupEntity(const refdef_t *fd, int entityIndex,
 	const float *worldToScreen)
 {
@@ -1741,12 +2206,14 @@ static void XboxNV2ASetupEntity(const refdef_t *fd, int entityIndex,
 	float axisLength = 1.0f;
 	int i;
 
-	if (entityIndex == XBOX_NV2A_WORLD_ENTITY) {
+	if (entityIndex == XBOX_NV2A_WORLD_ENTITY ||
+		xboxNV2ASceneEntities[entityIndex].reType != RT_MODEL) {
 		XboxNV2ASetTransform((const XguVec4 *)worldToScreen, qfalse);
 		VectorCopy(fd->vieworg, tess->viewOrigin);
 		VectorClear(tess->ambientLight);
 		VectorClear(tess->directedLight);
 		VectorClear(tess->lightDir);
+		Vector4Copy(xboxNV2APortalPlane, xboxNV2APortalPlaneLocal);
 		return;
 	}
 	entity = &xboxNV2ASceneEntities[entityIndex];
@@ -1760,6 +2227,11 @@ static void XboxNV2ASetupEntity(const refdef_t *fd, int entityIndex,
 	model[15] = 1.0f;
 	XboxNV2AMatrixMultiply(model, worldToScreen, modelToScreen);
 	XboxNV2ASetTransform((const XguVec4 *)modelToScreen, qfalse);
+	/* n.(origin + axis * v) - d, rearranged into a plane on the model-space v. */
+	for (i = 0; i < 3; ++i)
+		xboxNV2APortalPlaneLocal[i] = DotProduct(xboxNV2APortalPlane, entity->axis[i]);
+	xboxNV2APortalPlaneLocal[3] = xboxNV2APortalPlane[3] -
+		DotProduct(xboxNV2APortalPlane, entity->origin);
 
 	if (entity->nonNormalizedAxes) {
 		axisLength = VectorLength(entity->axis[0]);
@@ -1821,30 +2293,312 @@ static void XboxNV2ATessWorldSurface(const xboxNV2AWorldSurface_t *surface)
 	tess->numIndexes += surface->numIndexes;
 }
 
-/* ioq3 RB_RenderDrawSurfList: world surfaces with equal shader, entity and lightmap batch. */
-static void XboxNV2ADrawSurfaces(const refdef_t *fd, const float *worldToScreen)
+/* ioq3 RB_CheckOverflow: a full tess is drawn, then refilled under the same shader. */
+static void XboxNV2ACheckOverflow(int verts, int indexes)
+{
+	XboxNV2ATess *tess = &xboxNV2ATess;
+	int shader = tess->shader;
+	int lightmap = tess->lightmap;
+
+	if (tess->numVerts + verts < XBOX_NV2A_TESS_VERTS &&
+		tess->numIndexes + indexes < XBOX_NV2A_TESS_INDEXES)
+		return;
+	XboxNV2AEndSurface();
+	tess->shader = shader;
+	tess->lightmap = lightmap;
+}
+
+static int XboxNV2ATessVertex(const vec3_t xyz, float s, float t, const byte *color,
+	const vec3_t normal)
+{
+	XboxNV2ATess *tess = &xboxNV2ATess;
+	int v = tess->numVerts++;
+
+	VectorCopy(xyz, tess->xyz[v]);
+	VectorCopy(normal, tess->normal[v]);
+	tess->st[v][0] = s;
+	tess->st[v][1] = t;
+	tess->lightSt[v][0] = 0.0f;
+	tess->lightSt[v][1] = 0.0f;
+	memcpy(tess->color[v], color, 4);
+	return v;
+}
+
+static void XboxNV2ATessTriangle(int a, int b, int c)
+{
+	XboxNV2ATess *tess = &xboxNV2ATess;
+
+	tess->indexes[tess->numIndexes++] = (unsigned short)a;
+	tess->indexes[tess->numIndexes++] = (unsigned short)b;
+	tess->indexes[tess->numIndexes++] = (unsigned short)c;
+}
+
+/* ioq3 RB_SurfacePolychain: the poly is fanned into triangles. */
+static void XboxNV2ATessPoly(const XboxNV2APoly *poly)
+{
+	int first = xboxNV2ATess.numVerts;
+	int i;
+
+	for (i = 0; i < poly->numVerts; ++i)
+		XboxNV2ATessVertex(poly->verts[i].xyz, poly->verts[i].st[0], poly->verts[i].st[1],
+			poly->verts[i].modulate, vec3_origin);
+	for (i = 0; i < poly->numVerts - 2; ++i)
+		XboxNV2ATessTriangle(first, first + i + 1, first + i + 2);
+}
+
+/* ioq3 RB_SurfaceSprite and RB_AddQuadStamp: a view-facing quad turned by rotation degrees. */
+static void XboxNV2ATessSprite(const refdef_t *fd, const refEntity_t *e)
+{
+	vec3_t left, up, normal, corner;
+	float radius = e->radius;
+	int v;
+
+	if (e->rotation == 0.0f) {
+		VectorScale(fd->viewaxis[1], radius, left);
+		VectorScale(fd->viewaxis[2], radius, up);
+	} else {
+		float angle = (float)M_PI * e->rotation / 180.0f;
+		float s = sinf(angle);
+		float c = cosf(angle);
+
+		VectorScale(fd->viewaxis[1], c * radius, left);
+		VectorMA(left, -s * radius, fd->viewaxis[2], left);
+		VectorScale(fd->viewaxis[2], c * radius, up);
+		VectorMA(up, s * radius, fd->viewaxis[1], up);
+	}
+	if (xboxNV2AViewIsMirror)
+		VectorNegate(left, left);
+	VectorNegate(fd->viewaxis[0], normal);
+	XboxNV2ACheckOverflow(4, 6);
+	VectorAdd(e->origin, left, corner);
+	VectorAdd(corner, up, corner);
+	v = XboxNV2ATessVertex(corner, 0.0f, 0.0f, e->shaderRGBA, normal);
+	VectorSubtract(e->origin, left, corner);
+	VectorAdd(corner, up, corner);
+	XboxNV2ATessVertex(corner, 1.0f, 0.0f, e->shaderRGBA, normal);
+	VectorSubtract(e->origin, left, corner);
+	VectorSubtract(corner, up, corner);
+	XboxNV2ATessVertex(corner, 1.0f, 1.0f, e->shaderRGBA, normal);
+	VectorAdd(e->origin, left, corner);
+	VectorSubtract(corner, up, corner);
+	XboxNV2ATessVertex(corner, 0.0f, 1.0f, e->shaderRGBA, normal);
+	XboxNV2ATessTriangle(v, v + 1, v + 3);
+	XboxNV2ATessTriangle(v + 3, v + 1, v + 2);
+}
+
+/* ioq3 DoRailCore: a quad along the beam whose start edge has a quarter of the colour. */
+static void XboxNV2ATessRailCore(const refEntity_t *e, const vec3_t start, const vec3_t end,
+	const vec3_t up, float len, float spanWidth)
+{
+	byte dim[4], full[4];
+	vec3_t point;
+	float t = len / 256.0f;
+	int v, k;
+
+	XboxNV2ACheckOverflow(4, 6);
+	for (k = 0; k < 3; ++k) {
+		dim[k] = (byte)(e->shaderRGBA[k] * 0.25f);
+		full[k] = e->shaderRGBA[k];
+	}
+	/* ioq3 leaves the alpha unset; the additive rail and lightning shaders never read it. */
+	dim[3] = full[3] = 255;
+	VectorMA(start, spanWidth, up, point);
+	v = XboxNV2ATessVertex(point, 0.0f, 0.0f, dim, vec3_origin);
+	VectorMA(start, -spanWidth, up, point);
+	XboxNV2ATessVertex(point, 0.0f, 1.0f, full, vec3_origin);
+	VectorMA(end, spanWidth, up, point);
+	XboxNV2ATessVertex(point, t, 0.0f, full, vec3_origin);
+	VectorMA(end, -spanWidth, up, point);
+	XboxNV2ATessVertex(point, t, 1.0f, full, vec3_origin);
+	XboxNV2ATessTriangle(v, v + 1, v + 2);
+	XboxNV2ATessTriangle(v + 2, v + 1, v + 3);
+}
+
+/* The side vector of ioq3's rail core and lightning: across the beam as the viewer sees it. */
+static void XboxNV2ABeamSide(const refdef_t *fd, const vec3_t start, const vec3_t end,
+	vec3_t right)
+{
+	vec3_t v1, v2;
+
+	VectorSubtract(start, fd->vieworg, v1);
+	VectorNormalize(v1);
+	VectorSubtract(end, fd->vieworg, v2);
+	VectorNormalize(v2);
+	CrossProduct(v1, v2, right);
+	VectorNormalize(right);
+}
+
+/* ioq3 RB_SurfaceRailCore; like ioq3, the length is truncated to whole units. */
+static void XboxNV2ATessRail(const refdef_t *fd, const refEntity_t *e)
+{
+	vec3_t vec, right;
+	int len;
+
+	VectorSubtract(e->origin, e->oldorigin, vec);
+	len = (int)VectorNormalize(vec);
+	XboxNV2ABeamSide(fd, e->oldorigin, e->origin, right);
+	XboxNV2ATessRailCore(e, e->oldorigin, e->origin, right, (float)len,
+		XBOX_NV2A_RAIL_CORE_WIDTH);
+}
+
+/* ioq3 RB_SurfaceLightningBolt: four 8-unit cores, 45 degrees apart around the bolt. */
+static void XboxNV2ATessLightning(const refdef_t *fd, const refEntity_t *e)
+{
+	vec3_t vec, right, temp;
+	int len, i;
+
+	VectorSubtract(e->oldorigin, e->origin, vec);
+	len = (int)VectorNormalize(vec);
+	XboxNV2ABeamSide(fd, e->origin, e->oldorigin, right);
+	for (i = 0; i < 4; ++i) {
+		XboxNV2ATessRailCore(e, e->origin, e->oldorigin, right, (float)len, 8.0f);
+		RotatePointAroundVector(temp, vec, right, 45.0f);
+		VectorCopy(temp, right);
+	}
+}
+
+/* ioq3 RB_SurfaceRailRings and DoRailDiscs: square rings one segment apart. */
+static void XboxNV2ATessRailRings(const refEntity_t *e)
+{
+	vec3_t dir, right, up, pos[4];
+	byte color[4];
+	int len, numSegs, i, j;
+
+	VectorSubtract(e->origin, e->oldorigin, dir);
+	len = (int)VectorNormalize(dir);
+	MakeNormalVectors(dir, right, up);
+	numSegs = (int)(len / XBOX_NV2A_RAIL_SEGMENT_LENGTH);
+	if (numSegs <= 0)
+		numSegs = 1;
+	VectorScale(dir, XBOX_NV2A_RAIL_SEGMENT_LENGTH, dir);
+	/* ioq3 starts long shots one segment out and draws one ring fewer. */
+	if (numSegs > 1)
+		numSegs--;
+	for (i = 0; i < 4; ++i) {
+		float c = cosf(DEG2RAD(45 + i * 90));
+		float s = sinf(DEG2RAD(45 + i * 90));
+
+		for (j = 0; j < 3; ++j)
+			pos[i][j] = e->oldorigin[j] + (right[j] * c + up[j] * s) * 0.25f *
+				XBOX_NV2A_RAIL_WIDTH + (numSegs > 1 ? dir[j] : 0.0f);
+	}
+	memcpy(color, e->shaderRGBA, 3);
+	color[3] = 255;
+	for (i = 0; i < numSegs; ++i) {
+		int first;
+
+		XboxNV2ACheckOverflow(4, 6);
+		first = xboxNV2ATess.numVerts;
+		for (j = 0; j < 4; ++j) {
+			XboxNV2ATessVertex(pos[j], (float)(j < 2), (float)(j && j != 3), color, vec3_origin);
+			VectorAdd(pos[j], dir, pos[j]);
+		}
+		XboxNV2ATessTriangle(first, first + 1, first + 3);
+		XboxNV2ATessTriangle(first + 3, first + 1, first + 2);
+	}
+}
+
+/* ioq3 RB_SurfaceBeam skips the shader: a red additive tube on the white image, drawn at once. */
+static void XboxNV2ADrawBeam(const refEntity_t *e)
+{
+	static const byte white[4] = {255, 255, 255, 255};
+	XboxNV2ATess *tess = &xboxNV2ATess;
+	vec3_t direction, normalized, perp, start, end;
+	xboxNV2AStage_t stage;
+	int i;
+
+	VectorSubtract(e->oldorigin, e->origin, direction);
+	VectorCopy(direction, normalized);
+	if (VectorNormalize(normalized) == 0.0f)
+		return;
+	PerpendicularVector(perp, normalized);
+	VectorScale(perp, 4.0f, perp);
+	/* ioq3 has the origin add commented out, so the tube starts at the world origin. */
+	for (i = 0; i <= XBOX_NV2A_BEAM_SEGS; ++i) {
+		RotatePointAroundVector(start, normalized, perp,
+			(360.0f / XBOX_NV2A_BEAM_SEGS) * (i % XBOX_NV2A_BEAM_SEGS));
+		VectorAdd(start, direction, end);
+		XboxNV2ATessVertex(start, 0.0f, 0.0f, white, vec3_origin);
+		XboxNV2ATessVertex(end, 0.0f, 0.0f, white, vec3_origin);
+	}
+	/* The GL triangle strip as triangles; the cull is off, so winding does not matter. */
+	for (i = 0; i < 2 * XBOX_NV2A_BEAM_SEGS; ++i)
+		XboxNV2ATessTriangle(i, i + 1, i + 2);
+	memset(&stage, 0, sizeof(stage));
+	stage.images[0] = XBOX_NV2A_WHITE_IMAGE;
+	stage.numImages = 1;
+	stage.srcBlend = GL_ONE;
+	stage.dstBlend = GL_ONE;
+	stage.rgbGen = XBOX_NV2A_RGBGEN_CONST;
+	stage.constant[0] = 255;
+	if (XboxNV2AComputeNearDistances())
+		XboxNV2ADrawStage(&stage, XBOX_NV2A_CULL_NONE, qfalse);
+	tess->numVerts = 0;
+	tess->numIndexes = 0;
+}
+
+/* ioq3 RB_SurfaceEntity. */
+static void XboxNV2ATessEntity(const refdef_t *fd, const refEntity_t *entity)
+{
+	switch (entity->reType) {
+	case RT_SPRITE:
+		XboxNV2ATessSprite(fd, entity);
+		break;
+	case RT_BEAM:
+		XboxNV2ADrawBeam(entity);
+		break;
+	case RT_RAIL_CORE:
+		XboxNV2ATessRail(fd, entity);
+		break;
+	case RT_RAIL_RINGS:
+		XboxNV2ATessRailRings(entity);
+		break;
+	case RT_LIGHTNING:
+		XboxNV2ATessLightning(fd, entity);
+		break;
+	default:
+		break;
+	}
+}
+
+/* ioq3 RB_RenderDrawSurfList: world surfaces and polys with equal shader, entity and fog batch. */
+static void XboxNV2ADrawSurfaces(const refdef_t *fd, const float *worldToScreen, int first,
+	int last)
 {
 	XboxNV2ATess *tess = &xboxNV2ATess;
 	int currentEntity = XBOX_NV2A_WORLD_ENTITY - 1;
 	int i;
 
-	for (i = 0; i < xboxNV2ADrawSurfCount; ++i) {
+	for (i = first; i < last; ++i) {
 		const XboxNV2ADrawSurf *drawSurf = &xboxNV2ADrawSurfs[i];
 		const refEntity_t *entity = drawSurf->entity == XBOX_NV2A_WORLD_ENTITY ? NULL :
 			&xboxNV2ASceneEntities[drawSurf->entity];
+		/* A new entity always restarts the tess, even for a beam whose shader is 0. */
+		qboolean restart = drawSurf->md3 != NULL;
+		int verts = 0;
+		int indexes = 0;
 
 		if (drawSurf->entity != currentEntity) {
 			XboxNV2AEndSurface();
 			XboxNV2ASetupEntity(fd, drawSurf->entity, worldToScreen);
 			currentEntity = drawSurf->entity;
+			restart = qtrue;
 		}
-		if (drawSurf->md3 || tess->shader != drawSurf->shader ||
-			tess->lightmap != drawSurf->lightmap ||
-			tess->numVerts + drawSurf->world->numVerts > XBOX_NV2A_TESS_VERTS ||
-			tess->numIndexes + drawSurf->world->numIndexes > XBOX_NV2A_TESS_INDEXES) {
+		if (drawSurf->world) {
+			verts = drawSurf->world->numVerts;
+			indexes = drawSurf->world->numIndexes;
+		} else if (drawSurf->poly) {
+			verts = drawSurf->poly->numVerts;
+			indexes = 3 * (drawSurf->poly->numVerts - 2);
+		}
+		if (restart || tess->shader != drawSurf->shader ||
+			tess->lightmap != drawSurf->lightmap || tess->fogIndex != drawSurf->fogIndex ||
+			tess->numVerts + verts > XBOX_NV2A_TESS_VERTS ||
+			tess->numIndexes + indexes > XBOX_NV2A_TESS_INDEXES) {
 			XboxNV2AEndSurface();
 			tess->shader = drawSurf->shader;
 			tess->lightmap = drawSurf->lightmap;
+			tess->fogIndex = drawSurf->fogIndex;
 			tess->is3D = qtrue;
 			tess->entity = entity;
 			tess->shaderTime = fd->time * 0.001 - (entity ? entity->shaderTime : 0.0f);
@@ -1852,62 +2606,404 @@ static void XboxNV2ADrawSurfaces(const refdef_t *fd, const float *worldToScreen)
 		if (drawSurf->md3) {
 			XboxNV2ATessSurface(entity, drawSurf->md3);
 			XboxNV2AEndSurface();
-		} else {
+		} else if (drawSurf->world) {
 			XboxNV2ATessWorldSurface(drawSurf->world);
+		} else if (drawSurf->poly) {
+			if (verts <= XBOX_NV2A_TESS_VERTS)
+				XboxNV2ATessPoly(drawSurf->poly);
+		} else {
+			XboxNV2ATessEntity(fd, entity);
 		}
 	}
 	XboxNV2AEndSurface();
 }
 
-void XboxNV2A_RenderScene(const refdef_t *fd)
+/* Moves a sky grid in the tess around the view origin; qfalse when nothing is left to draw. */
+static qboolean XboxNV2APrepareSkyTess(void)
 {
-	float worldToScreen[16];
+	XboxNV2ATess *tess = &xboxNV2ATess;
+	int i;
+
+	for (i = 0; i < tess->numVerts; ++i) {
+		VectorAdd(tess->xyz[i], xboxNV2ASkyOrigin, tess->xyz[i]);
+		VectorClear(tess->normal[i]);
+		memset(tess->color[i], 0xff, 4);
+	}
+	return tess->numVerts > 0 && tess->numIndexes > 0 && XboxNV2AComputeNearDistances();
+}
+
+/* ioq3 RB_StageIteratorSky: the outer box with clamped side images, then the cloud stages. */
+static void XboxNV2ADrawSky(const refdef_t *fd, float zFar, const XboxNV2ASky *sky)
+{
+	XboxNV2ATess *tess = &xboxNV2ATess;
+	const XboxNV2AShader *shader = &xboxNV2AShaders[sky->shader];
+	/* ioq3 MakeSkyVec: the box corners stay inside zFar (div sqrt(3)). */
+	float boxSize = zFar / 1.75f;
+	int i;
+
+	tess->is3D = qtrue;
+	tess->isSky = qtrue;
+	tess->entity = NULL;
+	tess->lightmap = 0;
+	tess->fogIndex = 0;
+	tess->shaderTime = fd->time * 0.001;
+	xboxNV2ALastShaderName = shader->name;
+	if (shader->skyBox[0] > 0) {
+		xboxNV2AStage_t stage;
+
+		memset(&stage, 0, sizeof(stage));
+		stage.numImages = 1;
+		stage.clamp = qtrue;
+		stage.srcBlend = GL_ONE;
+		stage.dstBlend = GL_ZERO;
+		stage.rgbGen = XBOX_NV2A_RGBGEN_IDENTITY;
+		for (i = 0; i < XBOX_NV2A_SKY_SIDES; ++i) {
+			int image = shader->skyBox[xboxNV2ASkyTexOrder[i]];
+
+			tess->numVerts = XboxNV2ASky_BoxSide(&sky->bounds, i, boxSize, tess->xyz, tess->st,
+				tess->indexes, &tess->numIndexes);
+			if (!XboxNV2APrepareSkyTess())
+				continue;
+			/* ioq3 draws tr.defaultImage for a missing side; white stands in for it here. */
+			stage.images[0] = image > 0 ? image : XBOX_NV2A_WHITE_IMAGE;
+			XboxNV2ADrawStage(&stage, XBOX_NV2A_CULL_NONE, qfalse);
+		}
+	}
+	tess->numVerts = XboxNV2ASky_Clouds(&sky->bounds, shader->cloudHeight, boxSize, tess->xyz,
+		tess->st, tess->indexes, &tess->numIndexes);
+	if (XboxNV2APrepareSkyTess()) {
+		for (i = 0; i < shader->numStages; ++i)
+			XboxNV2ADrawStage(&shader->stages[i], XBOX_NV2A_CULL_NONE, qfalse);
+	}
+	tess->isSky = qfalse;
+	tess->shader = 0;
+	tess->numVerts = 0;
+	tess->numIndexes = 0;
+}
+
+/* ioq3 R_PlaneForSurface: faces keep their plane, soups use a triangle, grids get +X. */
+static void XboxNV2APlaneForSurface(const xboxNV2AWorldSurface_t *surface, cplane_t *plane)
+{
+	vec4_t plane4;
+
+	memset(plane, 0, sizeof(*plane));
+	if (surface->type == XBOX_NV2A_SURFACE_FACE) {
+		*plane = surface->plane;
+		return;
+	}
+	if (surface->type == XBOX_NV2A_SURFACE_TRIANGLES && surface->numIndexes >= 3 &&
+		PlaneFromPoints(plane4, surface->verts[surface->indexes[0]].xyz,
+		surface->verts[surface->indexes[1]].xyz, surface->verts[surface->indexes[2]].xyz)) {
+		VectorCopy(plane4, plane->normal);
+		plane->dist = plane4[3];
+		return;
+	}
+	plane->normal[0] = 1.0f;
+}
+
+/* ioq3 IsMirror: the nearest portal entity within 64 units is its own camera. */
+static qboolean XboxNV2AIsMirror(const XboxNV2ADrawSurf *drawSurf)
+{
+	cplane_t plane;
+	int i;
+
+	XboxNV2APlaneForSurface(drawSurf->world, &plane);
+	if (drawSurf->entity != XBOX_NV2A_WORLD_ENTITY)
+		plane.dist += DotProduct(plane.normal, xboxNV2ASceneEntities[drawSurf->entity].origin);
+	for (i = xboxNV2ASceneFirstEntity; i < xboxNV2ASceneEntityCount; ++i) {
+		const refEntity_t *e = &xboxNV2ASceneEntities[i];
+		float d;
+
+		if (e->reType != RT_PORTALSURFACE)
+			continue;
+		d = DotProduct(e->origin, plane.normal) - plane.dist;
+		if (d > 64.0f || d < -64.0f)
+			continue;
+		return VectorCompare(e->oldorigin, e->origin);
+	}
+	return qfalse;
+}
+
+/* ioq3 SurfIsOffscreen: world-space clip test, backface test and the portal range. */
+static qboolean XboxNV2ASurfIsOffscreen(const refdef_t *fd, const XboxNV2ADrawSurf *drawSurf,
+	const float *worldProjection)
+{
+	const xboxNV2AWorldSurface_t *surface = drawSurf->world;
+	unsigned int pointAnd = ~0u;
+	float shortest = 100000000.0f;
+	float range;
+	int numTriangles, i, j;
+
+	for (i = 0; i < surface->numVerts; ++i) {
+		const float *v = surface->verts[i].xyz;
+		unsigned int pointFlags = 0;
+		float clip[4];
+
+		for (j = 0; j < 4; ++j)
+			clip[j] = v[0] * worldProjection[j] + v[1] * worldProjection[4 + j] +
+				v[2] * worldProjection[8 + j] + worldProjection[12 + j];
+		for (j = 0; j < 3; ++j) {
+			if (clip[j] >= clip[3])
+				pointFlags |= 1u << (j * 2);
+			else if (clip[j] <= -clip[3])
+				pointFlags |= 1u << (j * 2 + 1);
+		}
+		pointAnd &= pointFlags;
+	}
+	if (pointAnd)
+		return qtrue;
+	numTriangles = surface->numIndexes / 3;
+	for (i = 0; i + 2 < surface->numIndexes; i += 3) {
+		const xboxNV2AWorldVert_t *v = &surface->verts[surface->indexes[i]];
+		vec3_t toVertex;
+		float len;
+
+		VectorSubtract(v->xyz, fd->vieworg, toVertex);
+		len = VectorLengthSquared(toVertex);
+		if (len < shortest)
+			shortest = len;
+		if (DotProduct(toVertex, v->normal) >= 0.0f)
+			numTriangles--;
+	}
+	if (!numTriangles)
+		return qtrue;
+	/* Mirrors do not fade with distance, so only portals have a range. */
+	if (XboxNV2AIsMirror(drawSurf))
+		return qfalse;
+	range = xboxNV2AShaders[drawSurf->shader].portalRange;
+	return shortest > range * range;
+}
+
+/* ioq3 R_GetPortalOrientations: the surface frame and the camera frame it maps onto. */
+static qboolean XboxNV2AGetPortalOrientations(const refdef_t *fd,
+	const XboxNV2ADrawSurf *drawSurf, orientation_t *surface, orientation_t *camera,
+	vec3_t pvsOrigin, qboolean *mirror)
+{
+	cplane_t originalPlane, plane;
+	int i, j;
+
+	XboxNV2APlaneForSurface(drawSurf->world, &originalPlane);
+	plane = originalPlane;
+	if (drawSurf->entity != XBOX_NV2A_WORLD_ENTITY) {
+		const refEntity_t *e = &xboxNV2ASceneEntities[drawSurf->entity];
+
+		/* The rotated plane frames the view; the unrotated one matches portal entities. */
+		for (i = 0; i < 3; ++i)
+			plane.normal[i] = originalPlane.normal[0] * e->axis[0][i] +
+				originalPlane.normal[1] * e->axis[1][i] + originalPlane.normal[2] * e->axis[2][i];
+		plane.dist = originalPlane.dist + DotProduct(plane.normal, e->origin);
+		originalPlane.dist += DotProduct(originalPlane.normal, e->origin);
+	}
+	VectorCopy(plane.normal, surface->axis[0]);
+	PerpendicularVector(surface->axis[1], surface->axis[0]);
+	CrossProduct(surface->axis[0], surface->axis[1], surface->axis[2]);
+
+	for (i = xboxNV2ASceneFirstEntity; i < xboxNV2ASceneEntityCount; ++i) {
+		const refEntity_t *e = &xboxNV2ASceneEntities[i];
+		vec3_t transformed;
+		float d;
+
+		if (e->reType != RT_PORTALSURFACE)
+			continue;
+		d = DotProduct(e->origin, originalPlane.normal) - originalPlane.dist;
+		if (d > 64.0f || d < -64.0f)
+			continue;
+		VectorCopy(e->oldorigin, pvsOrigin);
+		if (VectorCompare(e->oldorigin, e->origin)) {
+			VectorScale(plane.normal, plane.dist, surface->origin);
+			VectorCopy(surface->origin, camera->origin);
+			VectorNegate(surface->axis[0], camera->axis[0]);
+			VectorCopy(surface->axis[1], camera->axis[1]);
+			VectorCopy(surface->axis[2], camera->axis[2]);
+			*mirror = qtrue;
+			return qtrue;
+		}
+		/* The entity origin projected onto the plane is the point the view turns around. */
+		d = DotProduct(e->origin, plane.normal) - plane.dist;
+		VectorMA(e->origin, -d, surface->axis[0], surface->origin);
+		VectorCopy(e->oldorigin, camera->origin);
+		for (j = 0; j < 3; ++j)
+			VectorCopy(e->axis[j], camera->axis[j]);
+		VectorNegate(camera->axis[0], camera->axis[0]);
+		VectorNegate(camera->axis[1], camera->axis[1]);
+		/* oldframe turns the camera: frame is a speed, else skinNum offsets a bob. */
+		d = 0.0f;
+		if (e->oldframe)
+			d = e->frame ? (fd->time / 1000.0f) * e->frame :
+				e->skinNum + sinf(fd->time * 0.003f) * 4;
+		else if (e->skinNum)
+			d = (float)e->skinNum;
+		if (e->oldframe || e->skinNum) {
+			VectorCopy(camera->axis[1], transformed);
+			RotatePointAroundVector(camera->axis[1], camera->axis[0], transformed, d);
+			CrossProduct(camera->axis[0], camera->axis[1], camera->axis[2]);
+		}
+		*mirror = qfalse;
+		return qtrue;
+	}
+	/* No portal entity yet: the snapshot may not have arrived, so draw nothing. */
+	return qfalse;
+}
+
+/* ioq3 R_MirrorPoint and R_MirrorVector: surface-frame coordinates reused in the camera frame. */
+static void XboxNV2AMirrorVector(const vec3_t in, const orientation_t *surface,
+	const orientation_t *camera, vec3_t out)
+{
+	int i;
+
+	VectorClear(out);
+	for (i = 0; i < 3; ++i)
+		VectorMA(out, DotProduct(in, surface->axis[i]), camera->axis[i], out);
+}
+
+static void XboxNV2AMirrorPoint(const vec3_t in, const orientation_t *surface,
+	const orientation_t *camera, vec3_t out)
+{
+	vec3_t local;
+
+	VectorSubtract(in, surface->origin, local);
+	XboxNV2AMirrorVector(local, surface, camera, out);
+	VectorAdd(out, camera->origin, out);
+}
+
+static void XboxNV2ARenderView(const refdef_t *fd, const vec3_t pvsOrigin);
+
+/* ioq3 R_MirrorViewBySurface: renders the mirror or portal camera's view before this one. */
+static qboolean XboxNV2AMirrorViewBySurface(const refdef_t *fd,
+	const XboxNV2ADrawSurf *drawSurf, const float *worldProjection)
+{
+	XboxNV2ASky skies[XBOX_NV2A_MAX_SKIES];
+	orientation_t surface, camera;
+	vec3_t pvsOrigin, skyOrigin;
+	refdef_t portal;
+	qboolean mirror = qfalse;
+	int skyCount, bit, i;
+
+	if (!drawSurf->world || xboxNV2AShaders[drawSurf->shader].sort != XBOX_NV2A_SORT_PORTAL ||
+		XboxNV2ASurfIsOffscreen(fd, drawSurf, worldProjection) ||
+		!XboxNV2AGetPortalOrientations(fd, drawSurf, &surface, &camera, pvsOrigin, &mirror))
+		return qfalse;
+	portal = *fd;
+	XboxNV2AMirrorPoint(fd->vieworg, &surface, &camera, portal.vieworg);
+	for (i = 0; i < 3; ++i)
+		XboxNV2AMirrorVector(fd->viewaxis[i], &surface, &camera, portal.viewaxis[i]);
+	/* ioq3's clip plane keeps what lies in front of the camera plane. */
+	VectorNegate(camera.axis[0], xboxNV2APortalPlane);
+	xboxNV2APortalPlane[3] = DotProduct(camera.origin, xboxNV2APortalPlane);
+
+	/* DIAGNOSTIC: the first mirror and portal view, for the hardware test log. */
+	bit = mirror ? 29 : 30;
+	if (!(xboxNV2ATracedTypes & (1u << bit))) {
+		xboxNV2ATracedTypes |= 1u << bit;
+		Sys_XboxLog("Xbox NV2A: frame %u first %s view through %s\n", xboxNV2AFrameCount,
+			mirror ? "mirror" : "portal", xboxNV2AShaders[drawSurf->shader].name);
+	}
+
+	/* The portal view rebuilds the sky bounds, so this view's are kept around it. */
+	memcpy(skies, xboxNV2ASkies, sizeof(skies));
+	skyCount = xboxNV2ASkyCount;
+	VectorCopy(xboxNV2ASkyOrigin, skyOrigin);
+	xboxNV2AViewIsPortal = qtrue;
+	xboxNV2AViewIsMirror = mirror;
+	XboxNV2ARenderView(&portal, pvsOrigin);
+	xboxNV2AViewIsPortal = qfalse;
+	xboxNV2AViewIsMirror = qfalse;
+	memcpy(xboxNV2ASkies, skies, sizeof(skies));
+	xboxNV2ASkyCount = skyCount;
+	VectorCopy(skyOrigin, xboxNV2ASkyOrigin);
+	return qtrue;
+}
+
+/* ioq3 R_RenderView: gathers and sorts one view, renders a portal view first, then draws. */
+static void XboxNV2ARenderView(const refdef_t *fd, const vec3_t pvsOrigin)
+{
+	float worldProjection[16], worldToScreen[16], skyToScreen[16];
 	float zFar = XBOX_NV2A_ZFAR;
-	int worldSurfaces;
-	int signature;
-	int x, y, w, h;
+	qboolean world = !(fd->rdflags & RDF_NOWORLDMODEL) && XboxNV2AWorld_Loaded();
+	/* ioq3 r_fastsky: a black clear instead of the sky, and no portal views at 1. */
+	qboolean fastSky = world && xboxNV2AFastSky && xboxNV2AFastSky->integer;
+	int first = xboxNV2ADrawSurfCount;
+	int worldSurfaces, signature, split, x, y, w, h, i;
 	uint32_t *p;
 
+	xboxNV2ASkyCount = 0;
+	VectorCopy(fd->vieworg, xboxNV2ASkyOrigin);
+	if (world)
+		zFar = XboxNV2AWorld_AddSurfaces(fd, pvsOrigin);
+	worldSurfaces = xboxNV2ADrawSurfCount - first;
+	XboxNV2AAddPolySurfaces();
+	XboxNV2AAddEntitySurfaces(fd);
+	/* One line per new kind of scene: menu model, lit player model, world view. */
+	signature = (worldSurfaces > 0) | ((xboxNV2ADlightCount - xboxNV2ASceneFirstDlight) << 1);
+	if (!xboxNV2AViewIsPortal && xboxNV2ASceneCount < XBOX_NV2A_TRACE_SCENES &&
+		xboxNV2ADrawSurfCount > first && signature != xboxNV2ALastSceneSignature) {
+		xboxNV2ASceneCount++;
+		xboxNV2ALastSceneSignature = signature;
+		Sys_XboxLog("Xbox NV2A: frame %u scene %dx%d world=%d entities=%d dlights=%d "
+			"surfaces=%d skies=%d zfar=%d fogs=%d\n", xboxNV2AFrameCount, fd->width, fd->height,
+			worldSurfaces, xboxNV2ASceneEntityCount - xboxNV2ASceneFirstEntity,
+			xboxNV2ADlightCount - xboxNV2ASceneFirstDlight, xboxNV2ADrawSurfCount - first,
+			xboxNV2ASkyCount, (int)zFar, XboxNV2AWorld_NumFogs());
+	}
+	if (xboxNV2ADrawSurfCount == first && !xboxNV2ASkyCount)
+		return;
+	qsort(&xboxNV2ADrawSurfs[first], (size_t)(xboxNV2ADrawSurfCount - first),
+		sizeof(xboxNV2ADrawSurfs[0]), XboxNV2ACompareDrawSurfs);
+	XboxNV2ASetupView(fd, zFar, worldProjection, worldToScreen);
+	if (!xboxNV2AViewIsPortal && !(fastSky && xboxNV2AFastSky->integer == 1)) {
+		for (i = first; i < xboxNV2ADrawSurfCount &&
+			xboxNV2ADrawSurfs[i].sort <= XBOX_NV2A_SORT_PORTAL; ++i) {
+			if (XboxNV2AMirrorViewBySurface(fd, &xboxNV2ADrawSurfs[i], worldProjection))
+				break;
+		}
+	}
+	VectorCopy(fd->vieworg, xboxNV2AViewOrigin);
+	VectorCopy(fd->viewaxis[0], xboxNV2AViewForward);
+
+	/* ioq3 RB_BeginDrawingView clears depth inside the view before drawing it. */
+	x = fd->x < 0 ? 0 : fd->x;
+	y = fd->y < 0 ? 0 : fd->y;
+	w = (fd->x + fd->width > xboxNV2AWidth ? xboxNV2AWidth : fd->x + fd->width) - x;
+	h = (fd->y + fd->height > xboxNV2AHeight ? xboxNV2AHeight : fd->y + fd->height) - y;
+	if (w > 0 && h > 0) {
+		XboxNV2AReserve(20);
+		xgux_set_clear_rect((unsigned int)x, (unsigned int)y, (unsigned int)w,
+			(unsigned int)h);
+		p = pb_begin();
+		p = xgu_set_zstencil_clear_value(p, 0xffffff00);
+		p = xgu_set_color_clear_value(p, 0xff000000);
+		p = xgu_clear_surface(p, fastSky ? XGU_CLEAR_Z | XGU_CLEAR_STENCIL | XGU_CLEAR_COLOR :
+			XGU_CLEAR_Z | XGU_CLEAR_STENCIL);
+		pb_end(p);
+	}
+	/* Portal surfaces write depth before the sky, which then stays out of them. */
+	for (split = first; split < xboxNV2ADrawSurfCount &&
+		xboxNV2ADrawSurfs[split].sort < XBOX_NV2A_SORT_ENVIRONMENT; ++split)
+		;
+	XboxNV2ADrawSurfaces(fd, worldToScreen, first, split);
+	if (!fastSky && xboxNV2ASkyCount > 0) {
+		/* z = SKY_DEPTH * w, so the sky lands just in front of the cleared far value. */
+		memcpy(skyToScreen, worldToScreen, sizeof(skyToScreen));
+		for (i = 0; i < 4; ++i)
+			skyToScreen[i * 4 + 2] = skyToScreen[i * 4 + 3] * XBOX_NV2A_SKY_DEPTH;
+		XboxNV2ASetupEntity(fd, XBOX_NV2A_WORLD_ENTITY, skyToScreen);
+		for (i = 0; i < xboxNV2ASkyCount; ++i)
+			XboxNV2ADrawSky(fd, zFar, &xboxNV2ASkies[i]);
+	}
+	XboxNV2ADrawSurfaces(fd, worldToScreen, split, xboxNV2ADrawSurfCount);
+	xboxNV2ADrawSurfCount = first;
+}
+
+void XboxNV2A_RenderScene(const refdef_t *fd)
+{
 	if (!xboxNV2AInFrame || !fd)
 		return;
 	XboxNV2AEndSurface();
 	xboxNV2ADrawSurfCount = 0;
-	if (!(fd->rdflags & RDF_NOWORLDMODEL) && XboxNV2AWorld_Loaded())
-		zFar = XboxNV2AWorld_AddSurfaces(fd);
-	worldSurfaces = xboxNV2ADrawSurfCount;
-	XboxNV2AAddEntitySurfaces();
-	/* One line per new kind of scene: menu model, lit player model, world view. */
-	signature = (worldSurfaces > 0) | ((xboxNV2ADlightCount - xboxNV2ASceneFirstDlight) << 1);
-	if (xboxNV2ASceneCount < XBOX_NV2A_TRACE_SCENES && xboxNV2ADrawSurfCount > 0 &&
-		signature != xboxNV2ALastSceneSignature) {
-		xboxNV2ASceneCount++;
-		xboxNV2ALastSceneSignature = signature;
-		Sys_XboxLog("Xbox NV2A: frame %u scene %dx%d world=%d entities=%d dlights=%d "
-			"surfaces=%d zfar=%d\n", xboxNV2AFrameCount, fd->width, fd->height,
-			worldSurfaces, xboxNV2ASceneEntityCount - xboxNV2ASceneFirstEntity,
-			xboxNV2ADlightCount - xboxNV2ASceneFirstDlight, xboxNV2ADrawSurfCount, (int)zFar);
-	}
-	if (xboxNV2ADrawSurfCount > 0) {
-		qsort(xboxNV2ADrawSurfs, (size_t)xboxNV2ADrawSurfCount, sizeof(xboxNV2ADrawSurfs[0]),
-			XboxNV2ACompareDrawSurfs);
-		XboxNV2ASetupView(fd, zFar, worldToScreen);
-
-		/* ioq3 RB_BeginDrawingView clears depth inside the view before drawing it. */
-		x = fd->x < 0 ? 0 : fd->x;
-		y = fd->y < 0 ? 0 : fd->y;
-		w = (fd->x + fd->width > xboxNV2AWidth ? xboxNV2AWidth : fd->x + fd->width) - x;
-		h = (fd->y + fd->height > xboxNV2AHeight ? xboxNV2AHeight : fd->y + fd->height) - y;
-		if (w > 0 && h > 0) {
-			XboxNV2AReserve(16);
-			xgux_set_clear_rect((unsigned int)x, (unsigned int)y, (unsigned int)w,
-				(unsigned int)h);
-			p = pb_begin();
-			p = xgu_set_zstencil_clear_value(p, 0xffffff00);
-			p = xgu_clear_surface(p, XGU_CLEAR_Z | XGU_CLEAR_STENCIL);
-			pb_end(p);
-		}
-		XboxNV2ADrawSurfaces(fd, worldToScreen);
-	}
+	xboxNV2AViewIsPortal = qfalse;
+	xboxNV2AViewIsMirror = qfalse;
+	XboxNV2ARenderView(fd, fd->vieworg);
 	xboxNV2ASceneFirstEntity = xboxNV2ASceneEntityCount;
 	xboxNV2ASceneFirstDlight = xboxNV2ADlightCount;
+	xboxNV2ASceneFirstPoly = xboxNV2APolyCount;
 }

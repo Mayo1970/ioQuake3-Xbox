@@ -74,7 +74,7 @@ static void XboxRefAddRefEntity(const refEntity_t *entity)
 static void XboxRefAddPoly(qhandle_t shader, int numVerts,
 	const polyVert_t *verts, int num)
 {
-	(void)shader; (void)numVerts; (void)verts; (void)num;
+	XboxNV2A_AddPoly(shader, numVerts, verts, num);
 }
 static int XboxRefLightForPoint(vec3_t point, vec3_t ambient,
 	vec3_t directed, vec3_t direction)
@@ -122,9 +122,8 @@ static int XboxRefMarkFragments(int numPoints, const vec3_t *points,
 	const vec3_t projection, int maxPoints, vec3_t pointBuffer,
 	int maxFragments, markFragment_t *fragmentBuffer)
 {
-	(void)numPoints; (void)points; (void)projection; (void)maxPoints;
-	(void)pointBuffer; (void)maxFragments; (void)fragmentBuffer;
-	return 0;
+	return XboxNV2AWorld_MarkFragments(numPoints, points, projection, maxPoints,
+		pointBuffer, maxFragments, fragmentBuffer);
 }
 static int XboxRefLerpTag(orientation_t *tag, qhandle_t model, int start,
 	int end, float frac, const char *tagName)

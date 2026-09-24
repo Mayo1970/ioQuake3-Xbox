@@ -432,8 +432,9 @@ static void XboxShaderParseRgbGen(char **text, xboxNV2AStage_t *stage)
 	}
 }
 
-/* lightingSpecular and portal need world data, so they fall back to identity. */
-static void XboxShaderParseAlphaGen(char **text, xboxNV2AStage_t *stage)
+/* lightingSpecular needs world data, so it falls back to identity. */
+static void XboxShaderParseAlphaGen(char **text, xboxNV2AStage_t *stage,
+	xboxNV2AShaderDef_t *def)
 {
 	char *token = COM_ParseExt(text, qfalse);
 
@@ -452,6 +453,11 @@ static void XboxShaderParseAlphaGen(char **text, xboxNV2AStage_t *stage)
 		stage->alphaGen = XBOX_NV2A_ALPHAGEN_VERTEX;
 	} else if (!Q_stricmp(token, "oneMinusVertex")) {
 		stage->alphaGen = XBOX_NV2A_ALPHAGEN_ONE_MINUS_VERTEX;
+	} else if (!Q_stricmp(token, "portal")) {
+		/* ioq3 defaults a missing range to 256. */
+		stage->alphaGen = XBOX_NV2A_ALPHAGEN_PORTAL;
+		token = COM_ParseExt(text, qfalse);
+		def->portalRange = token[0] ? atof(token) : 256.0f;
 	} else {
 		stage->alphaGen = XBOX_NV2A_ALPHAGEN_IDENTITY;
 	}
@@ -459,7 +465,7 @@ static void XboxShaderParseAlphaGen(char **text, xboxNV2AStage_t *stage)
 
 /* Reads one stage up to its closing brace; qfalse if the stage cannot be drawn. */
 static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage,
-	qboolean picmip)
+	xboxNV2AShaderDef_t *def, qboolean picmip)
 {
 	char maps[XBOX_NV2A_MAX_ANIM_IMAGES][MAX_QPATH];
 	int numMaps = 0;
@@ -536,7 +542,7 @@ static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage,
 		} else if (!Q_stricmp(token, "rgbGen")) {
 			XboxShaderParseRgbGen(text, stage);
 		} else if (!Q_stricmp(token, "alphaGen")) {
-			XboxShaderParseAlphaGen(text, stage);
+			XboxShaderParseAlphaGen(text, stage, def);
 		} else if (!Q_stricmp(token, "tcGen") || !Q_stricmp(token, "texGen")) {
 			token = COM_ParseExt(text, qfalse);
 			if (!Q_stricmp(token, "environment")) {
@@ -576,6 +582,39 @@ static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage,
 	return stage->numImages > 0;
 }
 
+/* ioq3 ParseSkyParms; a missing parameter leaves the shader a normal one, as in ioq3. */
+static void XboxShaderParseSkyParms(char **text, xboxNV2AShaderDef_t *def)
+{
+	static const char *suffixes[XBOX_NV2A_SKY_SIDES] = {"rt", "bk", "lf", "ft", "up", "dn"};
+	char box[MAX_QPATH];
+	char *token;
+	int i;
+
+	token = COM_ParseExt(text, qfalse);
+	if (!token[0])
+		return;
+	if (strcmp(token, "-")) {
+		Q_strncpyz(box, token, sizeof(box));
+		for (i = 0; i < XBOX_NV2A_SKY_SIDES; ++i) {
+			char path[MAX_QPATH];
+
+			Com_sprintf(path, sizeof(path), "%s_%s.tga", box, suffixes[i]);
+			def->skyBox[i] = XboxShaderLoadImage(path, qtrue);
+		}
+	}
+	token = COM_ParseExt(text, qfalse);
+	if (!token[0])
+		return;
+	def->cloudHeight = atof(token);
+	if (!def->cloudHeight)
+		def->cloudHeight = 512.0f;
+	/* The inner box is parsed but never drawn by the GL1 renderer either. */
+	token = COM_ParseExt(text, qfalse);
+	if (!token[0])
+		return;
+	def->isSky = qtrue;
+}
+
 static float XboxShaderParseSort(const char *token)
 {
 	if (!Q_stricmp(token, "portal"))
@@ -603,7 +642,6 @@ static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def)
 {
 	char *p = body;
 	qboolean sortSet = qfalse;
-	qboolean polygonOffset = qfalse;
 	qboolean picmip = qtrue;
 	char *token;
 
@@ -613,7 +651,7 @@ static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def)
 			break;
 		if (!strcmp(token, "{")) {
 			if (def->numStages < XBOX_NV2A_MAX_STAGES) {
-				if (XboxShaderParseStage(&p, &def->stages[def->numStages], picmip))
+				if (XboxShaderParseStage(&p, &def->stages[def->numStages], def, picmip))
 					def->numStages++;
 			} else if (!SkipBracedSection(&p, 1)) {
 				break;
@@ -626,8 +664,7 @@ static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def)
 			continue;
 		}
 		if (!Q_stricmp(token, "skyParms")) {
-			def->isSky = qtrue;
-			SkipRestOfLine(&p);
+			XboxShaderParseSkyParms(&p, def);
 			continue;
 		}
 		if (!Q_stricmp(token, "cull")) {
@@ -647,23 +684,69 @@ static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def)
 			def->sort = XBOX_NV2A_SORT_PORTAL;
 			sortSet = qtrue;
 		} else if (!Q_stricmp(token, "polygonOffset")) {
-			polygonOffset = qtrue;
+			def->polygonOffset = qtrue;
+		} else if (!Q_stricmp(token, "surfaceparm")) {
+			if (!Q_stricmp(COM_ParseExt(&p, qfalse), "fog"))
+				def->isFog = qtrue;
+		} else if (!Q_stricmp(token, "fogParms")) {
+			/* ioq3 ParseVector wants "( r g b )"; without it the parms are ignored. */
+			vec3_t color = {-1.0f, -1.0f, -1.0f};
+
+			XboxShaderParseVector(&p, 3, color);
+			if (color[0] >= 0.0f) {
+				VectorCopy(color, def->fogColor);
+				def->fogDepth = atof(COM_ParseExt(&p, qfalse));
+			}
+			SkipRestOfLine(&p);
 		} else {
 			SkipRestOfLine(&p);
 		}
 	}
-	/* ioq3 FinishShader: a blended first stage sorts after opaque surfaces. */
+	/* ioq3 FinishShader: polygonOffset sorts as a decal first, then a blended first stage. */
 	if (!sortSet) {
 		const xboxNV2AStage_t *first = &def->stages[0];
 
-		if (def->numStages && (first->srcBlend != GL_ONE || first->dstBlend != GL_ZERO))
+		if (def->polygonOffset)
+			def->sort = XBOX_NV2A_SORT_DECAL;
+		else if (def->numStages && (first->srcBlend != GL_ONE || first->dstBlend != GL_ZERO))
 			def->sort = first->depthWrite ? XBOX_NV2A_SORT_SEE_THROUGH :
 				XBOX_NV2A_SORT_BLEND0;
-		else if (polygonOffset)
-			def->sort = XBOX_NV2A_SORT_DECAL;
 		else
 			def->sort = XBOX_NV2A_SORT_OPAQUE;
 	}
+	if (def->isSky)
+		def->sort = XBOX_NV2A_SORT_ENVIRONMENT;
+	/* ioq3: a shader with no stages is only drawn by its fog pass. */
+	if (!def->numStages && !def->isSky)
+		def->sort = XBOX_NV2A_SORT_FOG;
+}
+
+/* ioq3 FinishShader fog colour fades and GeneratePermanentShader's fog pass choice. */
+static void XboxShaderFinishFog(xboxNV2AShaderDef_t *def)
+{
+	const xboxNV2AStage_t *first = &def->stages[0];
+	qboolean firstBlended = first->srcBlend != GL_ONE || first->dstBlend != GL_ZERO;
+	int i;
+
+	for (i = 0; i < def->numStages; ++i) {
+		xboxNV2AStage_t *stage = &def->stages[i];
+		unsigned int src = stage->srcBlend;
+		unsigned int dst = stage->dstBlend;
+
+		if (!firstBlended || (src == GL_ONE && dst == GL_ZERO))
+			continue;
+		/* Only blends whose contribution goes to 0 with the colour can fade. */
+		if ((src == GL_ONE && dst == GL_ONE) || (src == GL_ZERO && dst == GL_ONE_MINUS_SRC_COLOR))
+			stage->adjustColorsForFog = XBOX_NV2A_ACFF_MODULATE_RGB;
+		else if (src == GL_SRC_ALPHA && dst == GL_ONE_MINUS_SRC_ALPHA)
+			stage->adjustColorsForFog = XBOX_NV2A_ACFF_MODULATE_ALPHA;
+		else if (src == GL_ONE && dst == GL_ONE_MINUS_SRC_ALPHA)
+			stage->adjustColorsForFog = XBOX_NV2A_ACFF_MODULATE_RGBA;
+	}
+	if (def->sort <= XBOX_NV2A_SORT_OPAQUE)
+		def->fogPass = XBOX_NV2A_FOGPASS_EQUAL;
+	else if (def->isFog)
+		def->fogPass = XBOX_NV2A_FOGPASS_LE;
 }
 
 /* ioq3 R_FindShader defaults for LIGHTMAP_2D, LIGHTMAP_NONE, lightmapped and vertex-lit. */
@@ -735,8 +818,15 @@ static qhandle_t XboxShaderRegister(const char *name, int flavor,
 		XboxShaderParse(script->body, &def);
 	else
 		XboxShaderImplicit(name, flavor, mipRawImage, &def);
+	XboxShaderFinishFog(&def);
 	/* nxdk's vsnprintf has no float conversions, so the sort prints as an integer. */
-	if (!def.numStages)
+	if (def.isSky)
+		Sys_XboxLog("Xbox shaders: sky %s box=%d cloudheight=%d stages=%d\n", stripped,
+			def.skyBox[0] > 0, (int)def.cloudHeight, def.numStages);
+	else if (def.isFog)
+		Sys_XboxLog("Xbox shaders: fog %s depth=%d stages=%d pass=%d\n", stripped,
+			(int)def.fogDepth, def.numStages, def.fogPass);
+	else if (!def.numStages)
 		Sys_XboxLog("Xbox shaders: %s unresolved%s\n", stripped,
 			script ? " (script has no drawable stage)" : "");
 	else if (flavor == XBOX_NV2A_SHADER_MODEL)
