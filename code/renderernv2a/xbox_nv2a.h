@@ -213,6 +213,10 @@ qboolean XboxNV2A_ShaderIsDrawable(qhandle_t shader);
 int XboxNV2A_ShaderCull(qhandle_t shader);
 void XboxNV2A_DrawStretchPic(float x, float y, float w, float h,
 	float s1, float t1, float s2, float t2, qhandle_t shader);
+void XboxNV2A_UploadCinematic(int cols, int rows, const byte *data, int client,
+	qboolean dirty);
+void XboxNV2A_DrawStretchRaw(int x, int y, int w, int h, int cols, int rows,
+	const byte *data, int client, qboolean dirty);
 void XboxNV2A_ClearScene(void);
 void XboxNV2A_AddRefEntity(const refEntity_t *entity);
 void XboxNV2A_AddLight(const vec3_t origin, float intensity, float r, float g,

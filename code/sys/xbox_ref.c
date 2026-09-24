@@ -102,14 +102,13 @@ static void XboxRefDrawStretchPic(float x, float y, float w, float h,
 static void XboxRefDrawStretchRaw(int x, int y, int w, int h, int cols,
 	int rows, const byte *data, int client, qboolean dirty)
 {
-	(void)x; (void)y; (void)w; (void)h; (void)cols; (void)rows;
-	(void)data; (void)client; (void)dirty;
+	XboxNV2A_DrawStretchRaw(x, y, w, h, cols, rows, data, client, dirty);
 }
 static void XboxRefUploadCinematic(int w, int h, int cols, int rows,
 	const byte *data, int client, qboolean dirty)
 {
-	(void)w; (void)h; (void)cols; (void)rows; (void)data;
-	(void)client; (void)dirty;
+	(void)w; (void)h;
+	XboxNV2A_UploadCinematic(cols, rows, data, client, dirty);
 }
 static void XboxRefBeginFrame(stereoFrame_t stereo)
 {

@@ -88,6 +88,8 @@ typedef struct {
 } XboxNV2ADlight;
 
 #define XBOX_NV2A_MAX_IMAGES 512
+/* cl_cin.c MAX_VIDEO_HANDLES; each handle's scratch texture follows the pool images. */
+#define XBOX_NV2A_MAX_CINEMATICS 16
 #define XBOX_NV2A_MAX_SHADERS 1024
 #define XBOX_NV2A_TEXTURE_POOL_BYTES (6u * 1024u * 1024u)
 #define XBOX_NV2A_TEXTURE_ALIGN 128u
@@ -125,7 +127,7 @@ static unsigned int xboxNV2AVertexUsed;
 static XboxNV2ATess xboxNV2ATess;
 static byte *xboxNV2ATexturePool;
 static size_t xboxNV2ATexturePoolUsed;
-static XboxNV2AImage xboxNV2AImages[XBOX_NV2A_MAX_IMAGES];
+static XboxNV2AImage xboxNV2AImages[XBOX_NV2A_MAX_IMAGES + XBOX_NV2A_MAX_CINEMATICS];
 static unsigned int xboxNV2AImageCount;
 static XboxNV2AShader xboxNV2AShaders[XBOX_NV2A_MAX_SHADERS];
 static unsigned int xboxNV2AShaderCount;
@@ -554,6 +556,20 @@ int XboxNV2A_ShaderCull(qhandle_t shader)
 	return xboxNV2AShaders[shader].cull;
 }
 
+/* Scratch textures live outside the pool; callers make sure the GPU is idle. */
+static void XboxNV2AFreeCinematics(void)
+{
+	int i;
+
+	for (i = 0; i < XBOX_NV2A_MAX_CINEMATICS; ++i) {
+		XboxNV2AImage *image = &xboxNV2AImages[XBOX_NV2A_MAX_IMAGES + i];
+
+		if (image->memory)
+			MmFreeContiguousMemory(image->memory);
+		memset(image, 0, sizeof(*image));
+	}
+}
+
 static void XboxNV2AResetTextures(void)
 {
 	static const byte whitePixel[4] = {255, 255, 255, 255};
@@ -562,6 +578,7 @@ static void XboxNV2AResetTextures(void)
 
 	for (i = 0; i < xboxNV2AShaderCount; ++i)
 		free(xboxNV2AShaders[i].stages);
+	XboxNV2AFreeCinematics();
 	memset(xboxNV2AImages, 0, sizeof(xboxNV2AImages));
 	memset(xboxNV2AShaders, 0, sizeof(xboxNV2AShaders));
 	Q_strncpyz(xboxNV2AImages[0].name, "*missing", sizeof(xboxNV2AImages[0].name));
@@ -1104,6 +1121,7 @@ static void XboxNV2ASetFrameState(void)
 
 static void XboxNV2AReleaseMemory(void)
 {
+	XboxNV2AFreeCinematics();
 	if (xboxNV2AVertexMemory) {
 		MmFreeContiguousMemory(xboxNV2AVertexMemory);
 		xboxNV2AVertexMemory = NULL;
@@ -1373,6 +1391,114 @@ void XboxNV2A_DrawStretchPic(float x, float y, float w, float h,
 		memcpy(tess->color[v], color, 4);
 	}
 	tess->numVerts += 4;
+}
+
+/* ioq3 RE_UploadCinematic: a new size reallocates, otherwise only dirty frames are copied. */
+void XboxNV2A_UploadCinematic(int cols, int rows, const byte *data, int client,
+	qboolean dirty)
+{
+	static unsigned int swizzleX[XBOX_NV2A_MAX_TEXTURE_SIZE];
+	static unsigned int swizzleY[XBOX_NV2A_MAX_TEXTURE_SIZE];
+	static qboolean warned;
+	XboxNV2AImage *image;
+	uint32_t *texels;
+	qboolean resized;
+	int x, y;
+
+	if (!xboxNV2AInitialized || !data || client < 0 || client >= XBOX_NV2A_MAX_CINEMATICS ||
+		!XboxNV2AIsPowerOfTwo(cols) || !XboxNV2AIsPowerOfTwo(rows) ||
+		cols > XBOX_NV2A_MAX_TEXTURE_SIZE || rows > XBOX_NV2A_MAX_TEXTURE_SIZE)
+		return;
+	image = &xboxNV2AImages[XBOX_NV2A_MAX_IMAGES + client];
+	resized = !image->memory || image->width != cols || image->height != rows;
+	if (!resized && !dirty)
+		return;
+	/* An earlier draw in this frame may still sample the old texels. */
+	XboxNV2AWaitIdle("cinematic upload");
+	if (resized) {
+		if (image->memory)
+			MmFreeContiguousMemory(image->memory);
+		memset(image, 0, sizeof(*image));
+		image->memory = MmAllocateContiguousMemoryEx((size_t)cols * (size_t)rows * 4, 0,
+			XBOX_NV2A_MAX_RAM, 0, PAGE_WRITECOMBINE | PAGE_READWRITE);
+		if (!image->memory) {
+			if (!warned)
+				Sys_XboxLog("Xbox NV2A: no memory for a %dx%d cinematic\n", cols, rows);
+			warned = qtrue;
+			return;
+		}
+		image->width = cols;
+		image->height = rows;
+		image->format = XGU_TEXTURE_FORMAT_X8R8G8B8_SWIZZLED;
+		Com_sprintf(image->name, sizeof(image->name), "*cinematic%d", client);
+	}
+	/* x and y bits never share a swizzled bit, so one table per axis is enough. */
+	for (x = 0; x < cols; ++x)
+		swizzleX[x] = XboxNV2ASwizzledOffset((unsigned int)x, 0, (unsigned int)cols,
+			(unsigned int)rows);
+	for (y = 0; y < rows; ++y)
+		swizzleY[y] = XboxNV2ASwizzledOffset(0, (unsigned int)y, (unsigned int)cols,
+			(unsigned int)rows);
+	texels = (uint32_t *)image->memory;
+	for (y = 0; y < rows; ++y) {
+		const byte *rgba = data + (size_t)y * (size_t)cols * 4;
+
+		for (x = 0; x < cols; ++x, rgba += 4)
+			texels[swizzleY[y] | swizzleX[x]] = 0xff000000u | ((uint32_t)rgba[0] << 16) |
+				((uint32_t)rgba[1] << 8) | rgba[2];
+	}
+	__asm__ __volatile__("sfence" ::: "memory");
+	/* The NV2A texture cache has no documented flush, so rebind as for a new texture. */
+	xboxNV2ABoundImage = -1;
+}
+
+/* ioq3 RE_StretchRaw: an opaque 2D quad with half-texel insets, in submission order. */
+void XboxNV2A_DrawStretchRaw(int x, int y, int w, int h, int cols, int rows,
+	const byte *data, int client, qboolean dirty)
+{
+	static const float corners[4][2] = {
+		{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}
+	};
+	const XboxNV2AImage *image;
+	xboxNV2AStage_t stage;
+	XboxNV2AColoredVertex *out;
+	float s1, t1, s2, t2;
+	int i, k;
+
+	if (!xboxNV2AInFrame || w <= 0 || h <= 0 || client < 0 ||
+		client >= XBOX_NV2A_MAX_CINEMATICS)
+		return;
+	XboxNV2AEndSurface();
+	XboxNV2A_UploadCinematic(cols, rows, data, client, dirty);
+	image = &xboxNV2AImages[XBOX_NV2A_MAX_IMAGES + client];
+	if (!image->memory || image->width != cols || image->height != rows)
+		return;
+	if (!xboxNV2ATransformIdentity)
+		XboxNV2ASetTransform(xboxNV2AScreenMatrix.col, qtrue);
+
+	memset(&stage, 0, sizeof(stage));
+	stage.clamp = qtrue;
+	stage.srcBlend = GL_ONE;
+	stage.dstBlend = GL_ZERO;
+	XboxNV2AApplyStageState(&stage, XBOX_NV2A_MAX_IMAGES + client, qfalse,
+		XBOX_NV2A_CULL_NONE);
+
+	s1 = 0.5f / cols;
+	t1 = 0.5f / rows;
+	s2 = (cols - 0.5f) / cols;
+	t2 = (rows - 0.5f) / rows;
+	out = XboxNV2AStreamVertices(4);
+	for (i = 0; i < 4; ++i) {
+		out[i].position[0] = x + w * corners[i][0];
+		out[i].position[1] = y + h * corners[i][1];
+		out[i].position[2] = 1.0f;
+		for (k = 0; k < 4; ++k)
+			out[i].color[k] = 1.0f;
+		out[i].texcoord[0] = corners[i][0] ? s2 : s1;
+		out[i].texcoord[1] = corners[i][1] ? t2 : t1;
+	}
+	XboxNV2ADrawVertices(XGU_QUADS, xboxNV2AVertexUsed, 4);
+	xboxNV2AVertexUsed += 4;
 }
 
 
