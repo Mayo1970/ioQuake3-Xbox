@@ -109,6 +109,8 @@ typedef struct {
 
 static xboxWorldStream_t xboxWorldStream;
 static xboxWorldPending_t *xboxWorldPending;
+/* The shader and fog lumps, copied to the heap for the shader registration. */
+static byte *xboxWorldLists;
 
 /* XboxNV2AWorld_Free runs this too; the renderer shutdown after an ERR_DROP reaches it. */
 static void XboxWorldEndLoad(void)
@@ -118,6 +120,8 @@ static void XboxWorldEndLoad(void)
 	xboxWorldStream.file = 0;
 	free(xboxWorldPending);
 	xboxWorldPending = NULL;
+	free(xboxWorldLists);
+	xboxWorldLists = NULL;
 }
 
 static void XboxWorldNoteFree(void)
@@ -243,8 +247,9 @@ static void XboxWorldLoadLightmaps(void)
 			rgba[j * 4 + 3] = 255;
 		}
 		Com_sprintf(name, sizeof(name), "*lightmap%d", i);
+		/* R5G6B5 like the textures: half the pool of the old 32-bit lightmaps, some banding. */
 		xboxWorld.lightmaps[i] = XboxNV2A_CreateImage(name, LIGHTMAP_WIDTH,
-			LIGHTMAP_HEIGHT, rgba, XBOX_NV2A_IMAGE_32BIT);
+			LIGHTMAP_HEIGHT, rgba, XBOX_NV2A_IMAGE_16BIT, qfalse);
 	}
 	XboxWorldFreeLump(rgba);
 	XboxWorldFreeLump(source);
@@ -874,11 +879,19 @@ void XboxNV2AWorld_Load(const char *name)
 	FS_FCloseFile(stream->file);
 	stream->file = 0;
 
-	/* Shader images load through hunk temp memory too, so they wait for the big lumps to go. */
-	XboxWorldRegisterFogs((const dfog_t *)fogs, numFogs);
-	XboxWorldRegisterSurfaces((const dshader_t *)shaders, numShaders);
+	/* Image loads come last; their FS_FreeFile clears all hunk temp memory, so the lists move out. */
+	xboxWorldLists = (byte *)malloc((size_t)numShaders * sizeof(dshader_t) +
+		(size_t)numFogs * sizeof(dfog_t) + 1);
+	if (!xboxWorldLists)
+		ri.Error(ERR_DROP, "RE_LoadWorldMap: no memory for the shader list");
+	memcpy(xboxWorldLists, shaders, (size_t)numShaders * sizeof(dshader_t));
+	memcpy(xboxWorldLists + (size_t)numShaders * sizeof(dshader_t), fogs,
+		(size_t)numFogs * sizeof(dfog_t));
 	XboxWorldFreeLump(fogs);
 	XboxWorldFreeLump(shaders);
+	XboxWorldRegisterFogs((const dfog_t *)(xboxWorldLists + (size_t)numShaders *
+		sizeof(dshader_t)), numFogs);
+	XboxWorldRegisterSurfaces((const dshader_t *)xboxWorldLists, numShaders);
 	XboxWorldEndLoad();
 	/* ioq3 default sun direction, used for entity light without a light grid. */
 	VectorSet(xboxWorld.sunDirection, 0.45f, 0.3f, 0.9f);

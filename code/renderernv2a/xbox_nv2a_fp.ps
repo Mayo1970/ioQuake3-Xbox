@@ -1,16 +1,26 @@
 !!TS1.0
 texture_2d();
+texture_2d();
 
 !!RC1.0
 {
-	// Multiply the sampled UI texel by the interpolated SetColor value.
+	// Stage texel times the stage colour.
 	rgb {
-		col0 = tex0.rgb * col0.rgb;
+		spare0 = tex0.rgb * col0.rgb;
 	}
 	alpha {
-		col0 = tex0.a * col0.a;
+		spare0 = tex0.a * col0.a;
+	}
+}
+{
+	// ioq3 GL_MODULATE multitexture: a collapsed second stage, or a white texel.
+	rgb {
+		spare0 = spare0.rgb * tex1.rgb;
+	}
+	alpha {
+		spare0 = spare0.a * tex1.a;
 	}
 }
 
-out.rgb = unsigned(col0.rgb);
-out.a = unsigned(col0.a);
+out.rgb = unsigned(spare0.rgb);
+out.a = unsigned(spare0.a);

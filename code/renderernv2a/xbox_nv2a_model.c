@@ -249,7 +249,22 @@ int XboxNV2AModel_BrushIndex(qhandle_t handle)
 	return xboxNV2AModels[handle].brush;
 }
 
-/* ioq3 LerpMeshVertexes: decode 1/64 unit positions and lat/long normals. */
+/* sin and cos of the 256 MD3 lat/long steps, the angles ioq3 reads from tr.sinTable. */
+static float xboxModelSin[256];
+static float xboxModelCos[256];
+static qboolean xboxModelTables;
+
+static void XboxModelDecodeNormal(short packed, float *out)
+{
+	int lat = (packed >> 8) & 0xff;
+	int lng = packed & 0xff;
+
+	out[0] = xboxModelCos[lat] * xboxModelSin[lng];
+	out[1] = xboxModelSin[lat] * xboxModelSin[lng];
+	out[2] = xboxModelCos[lng];
+}
+
+/* ioq3 LerpMeshVertexes: decode 1/64 unit positions and lat/long normals; backlerp 0 reads one frame. */
 void XboxNV2AModel_LerpSurface(const md3Surface_t *surface, int frame,
 	int oldFrame, float backlerp, float (*xyz)[3], float (*normal)[3])
 {
@@ -260,27 +275,32 @@ void XboxNV2AModel_LerpSurface(const md3Surface_t *surface, int frame,
 	float frontlerp = 1.0f - backlerp;
 	int i, k;
 
+	if (!xboxModelTables) {
+		for (i = 0; i < 256; ++i) {
+			xboxModelSin[i] = sinf(i * (2.0f * (float)M_PI / 256.0f));
+			xboxModelCos[i] = cosf(i * (2.0f * (float)M_PI / 256.0f));
+		}
+		xboxModelTables = qtrue;
+	}
+	if (backlerp == 0.0f) {
+		for (i = 0; i < surface->numVerts; ++i) {
+			for (k = 0; k < 3; ++k)
+				xyz[i][k] = newVerts[i].xyz[k] * (float)MD3_XYZ_SCALE;
+			XboxModelDecodeNormal(newVerts[i].normal, normal[i]);
+		}
+		return;
+	}
 	for (i = 0; i < surface->numVerts; ++i) {
 		vec3_t n[2];
-		const md3XyzNormal_t *v[2];
 
-		v[0] = &newVerts[i];
-		v[1] = &oldVerts[i];
-		for (k = 0; k < 2; ++k) {
-			float lat = ((v[k]->normal >> 8) & 0xff) * (2.0f * (float)M_PI / 256.0f);
-			float lng = (v[k]->normal & 0xff) * (2.0f * (float)M_PI / 256.0f);
-
-			n[k][0] = cosf(lat) * sinf(lng);
-			n[k][1] = sinf(lat) * sinf(lng);
-			n[k][2] = cosf(lng);
-		}
+		XboxModelDecodeNormal(newVerts[i].normal, n[0]);
+		XboxModelDecodeNormal(oldVerts[i].normal, n[1]);
 		for (k = 0; k < 3; ++k) {
-			xyz[i][k] = (v[0]->xyz[k] * frontlerp + v[1]->xyz[k] * backlerp) *
+			xyz[i][k] = (newVerts[i].xyz[k] * frontlerp + oldVerts[i].xyz[k] * backlerp) *
 				(float)MD3_XYZ_SCALE;
 			normal[i][k] = n[0][k] * frontlerp + n[1][k] * backlerp;
 		}
-		if (backlerp != 0.0f)
-			VectorNormalize(normal[i]);
+		VectorNormalize(normal[i]);
 	}
 }
 

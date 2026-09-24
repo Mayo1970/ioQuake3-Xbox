@@ -281,7 +281,7 @@ typedef struct {
 
 #define XBOX_NV2A_WORLD_ENTITY (-1)
 
-/* Texel storage for XboxNV2A_CreateImage; 32-bit keeps lightmaps free of 16-bit banding. */
+/* Texel storage for XboxNV2A_CreateImage; the fog and dlight images keep 32-bit alpha. */
 typedef enum {
 	XBOX_NV2A_IMAGE_16BIT,
 	XBOX_NV2A_IMAGE_32BIT,
@@ -299,8 +299,11 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame);
 void XboxNV2A_EndFrame(int *frontEndMsec, int *backEndMsec);
 void XboxNV2A_SetColor(const float *rgba);
 int XboxNV2A_FindImage(const char *name);
+/* mipmap adds the box-filtered chain; a DXT1 chain stops at 4x4. */
 int XboxNV2A_CreateImage(const char *name, int width, int height,
-	const byte *rgba, int storage);
+	const byte *rgba, int storage, qboolean mipmap);
+/* ioq3 R_MipMap box filter, in place; a 1-texel side stays 1 texel. */
+void XboxNV2A_HalveImage(byte *pic, int *width, int *height);
 qboolean XboxNV2A_FindShader(const char *name, int flavor, qhandle_t *handle);
 qhandle_t XboxNV2A_CreateShader(const char *name, int flavor,
 	const xboxNV2AShaderDef_t *def);

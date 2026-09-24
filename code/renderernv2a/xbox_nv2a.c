@@ -24,10 +24,12 @@
 float R_NoiseGet4f(float x, float y, float z, double t);
 void R_NoiseInit(void);
 
+/* 28 bytes; the colour is R, G, B, A bytes, read as NV097 UB_OGL like pbgl and nxdk-gles11. */
 typedef struct {
 	float position[3];
-	float color[4];
+	byte color[4];
 	float texcoord[2];
+	float texcoord1[2];
 } XboxNV2AColoredVertex;
 
 typedef struct {
@@ -36,6 +38,8 @@ typedef struct {
 	int width;
 	int height;
 	XguTexFormatColor format;
+	/* Mip levels stored one after another from memory; 0 counts as 1. */
+	int levels;
 } XboxNV2AImage;
 
 typedef struct {
@@ -57,6 +61,8 @@ typedef struct {
 	xboxNV2ADeform_t *deforms;
 	int numStages;
 	xboxNV2AStage_t *stages;
+	/* Stages 0 and 1 draw as one multitextured pass. */
+	qboolean collapsed;
 } XboxNV2AShader;
 
 /* ioq3 tess: one batch of CPU vertices with one shader, drawn once per stage. */
@@ -85,6 +91,9 @@ typedef struct {
 	byte color[XBOX_NV2A_TESS_VERTS][4];
 	unsigned short indexes[XBOX_NV2A_TESS_INDEXES];
 	float stageSt[XBOX_NV2A_TESS_VERTS][2];
+	/* Texture unit 1 coordinates of a collapsed second stage, when multitexture is set. */
+	float stageSt1[XBOX_NV2A_TESS_VERTS][2];
+	qboolean multitexture;
 	byte stageColor[XBOX_NV2A_TESS_VERTS][4];
 	/* Signed distances in front of the near plane and a portal view's clip plane. */
 	float nearDist[XBOX_NV2A_TESS_VERTS];
@@ -92,6 +101,8 @@ typedef struct {
 	qboolean clip;
 	/* The triangles one dlight reaches, for its pass. */
 	unsigned short dlightIndexes[XBOX_NV2A_TESS_INDEXES];
+	/* Stream indexes of one draw; a clipped triangle can become three. */
+	unsigned short drawIndexes[3 * XBOX_NV2A_TESS_INDEXES];
 } XboxNV2ATess;
 
 /* ioq3 srfPoly_t; verts points into xboxNV2APolyVerts. */
@@ -130,12 +141,19 @@ typedef struct {
 /* Highest physical address the xgu samples allow for GPU memory. */
 #define XBOX_NV2A_MAX_RAM 0x03FFAFFF
 #define XBOX_NV2A_TRIANGLE_VERTS 3
-#define XBOX_NV2A_MAX_VERTS (2048u * 4u)
+/* Holds a full tess plus 5 clipped corners for each of its 2000 triangles, so one draw always fits. */
+#define XBOX_NV2A_MAX_VERTS 12288u
+#define XBOX_NV2A_VERTEX_UB_OGL ((XguVertexArrayType)NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_UB_OGL)
 #define XBOX_NV2A_CLEAR_COLOR 0xff101820
 #define XBOX_NV2A_ZMAX ((float)0xFFFFFF)
 /* Release pbkit does not check for overflow; restart well below its 512 KiB limit. */
 #define XBOX_NV2A_PUSH_LIMIT_DWORDS (96u * 1024u)
-#define XBOX_NV2A_STATE_DWORDS 56u
+#define XBOX_NV2A_STATE_DWORDS 64u
+/* NV097_SET_TEXTURE_FILTER min/mag: TENT_LOD0 is GL_LINEAR, TENT_NEARESTLOD ioq3's default
+   GL_LINEAR_MIPMAP_NEAREST; the LOD clamps are 4.8 fixed point. */
+#define XBOX_NV2A_FILTER_LINEAR 2
+#define XBOX_NV2A_FILTER_MIPMAP 4
+#define XBOX_NV2A_MAX_LOD_CLAMP 4095
 /* ioq3 MAX_REFENTITIES: every smoke puff, explosion and trail is an entity too. */
 #define XBOX_NV2A_MAX_SCENE_ENTITIES MAX_REFENTITIES
 #define XBOX_NV2A_MAX_SCENE_SURFACES 4096
@@ -175,9 +193,9 @@ typedef struct {
 #define XBOX_NV2A_DLIGHT_SIZE 16
 
 static XboxNV2AColoredVertex xboxNV2ATriangle[XBOX_NV2A_TRIANGLE_VERTS] = {
-	{{0.0f, 0.0f, 1.0f}, {1.0f, 0.08f, 0.04f, 1.0f}, {0.0f, 0.0f}},
-	{{0.0f, 0.0f, 1.0f}, {0.08f, 1.0f, 0.16f, 1.0f}, {0.0f, 0.0f}},
-	{{0.0f, 0.0f, 1.0f}, {0.08f, 0.24f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+	{{0.0f, 0.0f, 1.0f}, {255, 20, 10, 255}, {0.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.0f, 0.0f, 1.0f}, {20, 255, 41, 255}, {0.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.0f, 0.0f, 1.0f}, {20, 61, 255, 255}, {0.0f, 0.0f}, {0.0f, 0.0f}},
 };
 
 /* Vertices stream into contiguous memory; the GPU reads them with DRAW_ARRAYS. */
@@ -189,10 +207,12 @@ static size_t xboxNV2ATexturePoolUsed;
 static XboxNV2AImage xboxNV2AImages[XBOX_NV2A_MAX_IMAGES + XBOX_NV2A_MAX_CINEMATICS];
 static unsigned int xboxNV2AImageCount;
 static unsigned int xboxNV2ADxtImageCount;
+static unsigned int xboxNV2ACollapsedCount;
 static XboxNV2AShader xboxNV2AShaders[XBOX_NV2A_MAX_SHADERS];
 static unsigned int xboxNV2AShaderCount;
-static int xboxNV2ABoundImage;
-static qboolean xboxNV2ABoundClamp;
+/* Unit 0 holds the stage image; unit 1 a collapsed second stage's image, or white. */
+static int xboxNV2ABoundImage[2];
+static qboolean xboxNV2ABoundClamp[2];
 static unsigned int xboxNV2ABoundSrcBlend;
 static unsigned int xboxNV2ABoundDstBlend;
 static int xboxNV2ABoundAlphaFunc;
@@ -241,6 +261,11 @@ static float xboxNV2AFogTable[XBOX_NV2A_FOG_TABLE_SIZE];
 static int xboxNV2ADlightImage;
 static cvar_t *xboxNV2AFastSky;
 static cvar_t *xboxNV2ADynamicLight;
+static cvar_t *xboxNV2AMultitexture;
+static cvar_t *xboxNV2ASwapInterval;
+/* pbkit vblank counts at which the last two queued flips show; pbkit shows one per vblank. */
+static DWORD xboxNV2AFlipShow[2];
+static unsigned int xboxNV2AFlipsQueued;
 /* The view being drawn: the scene's own, or a mirror/portal view drawn just before it. */
 static qboolean xboxNV2AViewIsPortal;
 static qboolean xboxNV2AViewIsMirror;
@@ -307,14 +332,67 @@ static unsigned int xboxNV2ATracedTypes;
 #define XBOX_NV2A_TRACE_DEPTHHACK 14
 #define XBOX_NV2A_TRACE_DLIGHT 15
 
-static void XboxNV2AWaitIdle(const char *where)
+/* DIAGNOSTIC: sums over one heartbeat for the hardware log; times in performance counter ticks. */
+typedef struct {
+	unsigned int frames;
+	unsigned int draws;
+	unsigned int verts;
+	unsigned int indexes;
+	unsigned int streamWraps;
+	unsigned int pushResets;
+	LONGLONG frameTicks;
+	LONGLONG sceneTicks;
+	LONGLONG vblankTicks;
+	LONGLONG endWaitTicks;
+	LONGLONG midWaitTicks;
+	LONGLONG lastBegin;
+	LONGLONG sceneStart;
+} XboxNV2APerfCounters;
+static XboxNV2APerfCounters xboxNV2APerf;
+
+static LONGLONG XboxNV2ATicks(void)
+{
+	LARGE_INTEGER now;
+
+	QueryPerformanceCounter(&now);
+	return now.QuadPart;
+}
+
+/* Returns the ticks spent waiting. */
+static LONGLONG XboxNV2AWaitIdle(const char *where)
 {
 	DWORD start = GetTickCount();
+	LONGLONG ticks = XboxNV2ATicks();
 
 	while (pb_busy()) {
 		if (GetTickCount() - start > XBOX_NV2A_GPU_TIMEOUT_MS)
 			Sys_Error("Xbox NV2A: GPU hang in %s, frame %u, last shader %s",
 				where, xboxNV2AFrameCount, xboxNV2ALastShaderName);
+	}
+	return XboxNV2ATicks() - ticks;
+}
+
+/* DIAGNOSTIC: per-frame averages in microseconds; nxdk printf has no floats. */
+static void XboxNV2ALogPerf(void)
+{
+	XboxNV2APerfCounters *c = &xboxNV2APerf;
+	LARGE_INTEGER frequency;
+	double us;
+	unsigned int frames = c->frames ? c->frames : 1;
+
+	QueryPerformanceFrequency(&frequency);
+	us = 1000000.0 / ((double)frequency.QuadPart * frames);
+	Sys_XboxLog("Xbox perf: %u frames, per frame us: total=%u scene=%u gpuwait=%u vblank=%u "
+		"midwait=%u; per frame: draws=%u verts=%u indexes=%u; wraps=%u pushresets=%u\n",
+		c->frames, (unsigned int)(c->frameTicks * us), (unsigned int)(c->sceneTicks * us),
+		(unsigned int)(c->endWaitTicks * us), (unsigned int)(c->vblankTicks * us),
+		(unsigned int)(c->midWaitTicks * us), c->draws / frames, c->verts / frames,
+		c->indexes / frames, c->streamWraps, c->pushResets);
+	{
+		LONGLONG lastBegin = c->lastBegin;
+
+		memset(c, 0, sizeof(*c));
+		c->lastBegin = lastBegin;
 	}
 }
 
@@ -322,7 +400,8 @@ static void XboxNV2AWaitIdle(const char *where)
 static void XboxNV2AReserve(unsigned int dwords)
 {
 	if (xboxNV2APushedDwords + dwords > XBOX_NV2A_PUSH_LIMIT_DWORDS) {
-		XboxNV2AWaitIdle("reserve");
+		xboxNV2APerf.midWaitTicks += XboxNV2AWaitIdle("reserve");
+		xboxNV2APerf.pushResets++;
 		pb_reset();
 		xboxNV2APushedDwords = 0;
 	}
@@ -331,8 +410,8 @@ static void XboxNV2AReserve(unsigned int dwords)
 
 static void XboxNV2AInvalidateState(void)
 {
-	xboxNV2ABoundImage = -1;
-	xboxNV2ABoundClamp = qfalse;
+	xboxNV2ABoundImage[0] = xboxNV2ABoundImage[1] = -1;
+	xboxNV2ABoundClamp[0] = xboxNV2ABoundClamp[1] = qfalse;
 	xboxNV2ABoundSrcBlend = ~0u;
 	xboxNV2ABoundDstBlend = ~0u;
 	xboxNV2ABoundAlphaFunc = -1;
@@ -408,9 +487,35 @@ static XguBlendFactor XboxNV2ABlendFactor(unsigned int factor)
 	}
 }
 
-/* 2D stages never touch depth or culling; depth-tested stages write depth when asked. */
+static uint32_t *XboxNV2ABindTexture(uint32_t *p, unsigned int unit, int imageIndex,
+	qboolean clamp)
+{
+	const XboxNV2AImage *image = &xboxNV2AImages[imageIndex];
+	XguTextureAddress address = clamp ? XGU_CLAMP_TO_EDGE : XGU_WRAP;
+	int levels = image->levels > 1 ? image->levels : 1;
+
+	if (imageIndex == xboxNV2ABoundImage[unit] && clamp == xboxNV2ABoundClamp[unit])
+		return p;
+	p = xgu_set_texture_offset(p, unit, (void *)((uint32_t)image->memory & 0x03ffffff));
+	p = xgu_set_texture_format(p, unit, 2, false, XGU_SOURCE_COLOR, 2, image->format,
+		(uint8_t)levels, XboxNV2ALog2(image->width), XboxNV2ALog2(image->height), 0);
+	/* U, V and P must all hold a valid mode; 0 raises a GPU invalid-data error. */
+	p = xgu_set_texture_address(p, unit, address, false, address, false, address, false,
+		false);
+	/* The format's level count limits the LOD, so the clamp stays wide open, as in pbgl. */
+	p = xgu_set_texture_control0(p, unit, true, 0, XBOX_NV2A_MAX_LOD_CLAMP);
+	p = xgu_set_texture_filter(p, unit, 0, XGU_TEXTURE_CONVOLUTION_QUINCUNX,
+		levels > 1 ? XBOX_NV2A_FILTER_MIPMAP : XBOX_NV2A_FILTER_LINEAR, XBOX_NV2A_FILTER_LINEAR,
+		false, false, false, false);
+	xboxNV2ABoundImage[unit] = imageIndex;
+	xboxNV2ABoundClamp[unit] = clamp;
+	return p;
+}
+
+/* 2D stages never touch depth or culling; image1 is a collapsed second stage's, else white. */
 static void XboxNV2AApplyStageState(const xboxNV2AStage_t *stage, int imageIndex,
-	qboolean is3D, qboolean depthTest, int cull, qboolean polygonOffset)
+	int image1, qboolean clamp1, qboolean is3D, qboolean depthTest, int cull,
+	qboolean polygonOffset)
 {
 	int depthWrite = depthTest && stage->depthWrite;
 	int depthEqual = depthTest && stage->depthEqual;
@@ -422,24 +527,8 @@ static void XboxNV2AApplyStageState(const xboxNV2AStage_t *stage, int imageIndex
 
 	XboxNV2AReserve(XBOX_NV2A_STATE_DWORDS);
 	p = pb_begin();
-	if (imageIndex != xboxNV2ABoundImage || stage->clamp != xboxNV2ABoundClamp) {
-		const XboxNV2AImage *image = &xboxNV2AImages[imageIndex];
-		XguTextureAddress address = stage->clamp ? XGU_CLAMP_TO_EDGE : XGU_WRAP;
-
-		p = xgu_set_texture_offset(p, 0,
-			(void *)((uint32_t)image->memory & 0x03ffffff));
-		p = xgu_set_texture_format(p, 0, 2, false, XGU_SOURCE_COLOR, 2,
-			image->format, 1, XboxNV2ALog2(image->width),
-			XboxNV2ALog2(image->height), 0);
-		/* U, V and P must all hold a valid mode; 0 raises a GPU invalid-data error. */
-		p = xgu_set_texture_address(p, 0, address, false, address, false,
-			address, false, false);
-		p = xgu_set_texture_control0(p, 0, true, 0, 0);
-		p = xgu_set_texture_filter(p, 0, 0, XGU_TEXTURE_CONVOLUTION_QUINCUNX,
-			2, 2, false, false, false, false);
-		xboxNV2ABoundImage = imageIndex;
-		xboxNV2ABoundClamp = stage->clamp;
-	}
+	p = XboxNV2ABindTexture(p, 0, imageIndex, stage->clamp);
+	p = XboxNV2ABindTexture(p, 1, image1, clamp1);
 	if (stage->srcBlend != xboxNV2ABoundSrcBlend ||
 		stage->dstBlend != xboxNV2ABoundDstBlend) {
 		p = xgu_set_blend_func_sfactor(p, XboxNV2ABlendFactor(stage->srcBlend));
@@ -514,16 +603,82 @@ static uint16_t XboxNV2APackTexel(const byte *rgba, XguTexFormatColor format)
 		((rgba[1] >> 4) << 4) | (rgba[2] >> 4));
 }
 
+/* ioq3 R_MipMap box filter; out may be in, as each texel is written after its inputs are read. */
+static void XboxNV2AHalve(const byte *in, int width, int height, byte *out)
+{
+	int outWidth = width > 1 ? width / 2 : 1;
+	int outHeight = height > 1 ? height / 2 : 1;
+	int stepX = width > 1 ? 1 : 0;
+	int stepY = height > 1 ? 1 : 0;
+	int x, y, k;
+
+	for (y = 0; y < outHeight; ++y) {
+		const byte *row0 = in + (size_t)(y * (stepY + 1)) * width * 4;
+		const byte *row1 = row0 + (size_t)stepY * width * 4;
+
+		for (x = 0; x < outWidth; ++x) {
+			int x0 = x * (stepX + 1) * 4;
+			int x1 = x0 + stepX * 4;
+			byte *texel = out + ((size_t)y * outWidth + x) * 4;
+
+			for (k = 0; k < 4; ++k)
+				texel[k] = (byte)((row0[x0 + k] + row0[x1 + k] + row1[x0 + k] +
+					row1[x1 + k] + 2) >> 2);
+		}
+	}
+}
+
+void XboxNV2A_HalveImage(byte *pic, int *width, int *height)
+{
+	XboxNV2AHalve(pic, *width, *height, pic);
+	*width = *width > 1 ? *width / 2 : 1;
+	*height = *height > 1 ? *height / 2 : 1;
+}
+
+static size_t XboxNV2ALevelBytes(int width, int height, int storage)
+{
+	if (storage == XBOX_NV2A_IMAGE_DXT1)
+		return (size_t)width * (size_t)height / 2;
+	return (size_t)width * (size_t)height * (storage == XBOX_NV2A_IMAGE_32BIT ? 4 : 2);
+}
+
+static void XboxNV2AUploadLevel(byte *memory, const byte *rgba, int width, int height,
+	int storage, XguTexFormatColor format)
+{
+	int x, y;
+
+	if (storage == XBOX_NV2A_IMAGE_DXT1) {
+		XboxNV2ADxt_Compress(rgba, width, height, memory);
+		return;
+	}
+	for (y = 0; y < height; ++y) {
+		for (x = 0; x < width; ++x) {
+			const byte *texel = rgba + ((size_t)y * width + x) * 4;
+			unsigned int swizzled = XboxNV2ASwizzledOffset((unsigned int)x, (unsigned int)y,
+				(unsigned int)width, (unsigned int)height);
+
+			if (storage == XBOX_NV2A_IMAGE_32BIT)
+				((uint32_t *)memory)[swizzled] = ((uint32_t)texel[3] << 24) |
+					((uint32_t)texel[0] << 16) | ((uint32_t)texel[1] << 8) | texel[2];
+			else
+				((uint16_t *)memory)[swizzled] = XboxNV2APackTexel(texel, format);
+		}
+	}
+}
+
+/* Levels follow each other without padding, as in pbgl; DXT1 stops before a side drops below 4. */
 static int XboxNV2AAddImage(const char *name, int width, int height,
-	const byte *rgba, int storage)
+	const byte *rgba, int storage, qboolean mipmap)
 {
 	XboxNV2AImage *image;
 	XguTexFormatColor format;
 	qboolean alpha = qfalse;
-	size_t textureSize;
+	size_t textureSize = 0;
 	size_t offset;
 	size_t pixel;
-	int x, y;
+	byte *scratch = NULL;
+	int levels = 0;
+	int w = width, h = height;
 
 	for (pixel = 0; pixel < (size_t)width * (size_t)height; ++pixel) {
 		if (rgba[pixel * 4 + 3] != 255) {
@@ -534,17 +689,22 @@ static int XboxNV2AAddImage(const char *name, int width, int height,
 	/* DXT1's 1-bit alpha would turn texels black under additive or filter blends. */
 	if (storage == XBOX_NV2A_IMAGE_DXT1 && (alpha || width < 4 || height < 4))
 		storage = XBOX_NV2A_IMAGE_16BIT;
-	if (storage == XBOX_NV2A_IMAGE_DXT1) {
+	if (storage == XBOX_NV2A_IMAGE_DXT1)
 		format = XGU_TEXTURE_FORMAT_DXT1;
-		textureSize = (size_t)width * (size_t)height / 2;
-	} else if (storage == XBOX_NV2A_IMAGE_32BIT) {
+	else if (storage == XBOX_NV2A_IMAGE_32BIT)
 		format = alpha ? XGU_TEXTURE_FORMAT_A8R8G8B8_SWIZZLED :
 			XGU_TEXTURE_FORMAT_X8R8G8B8_SWIZZLED;
-		textureSize = (size_t)width * (size_t)height * 4;
-	} else {
+	else
 		format = alpha ? XGU_TEXTURE_FORMAT_A4R4G4B4_SWIZZLED :
 			XGU_TEXTURE_FORMAT_R5G6B5_SWIZZLED;
-		textureSize = (size_t)width * (size_t)height * 2;
+	for (;;) {
+		textureSize += XboxNV2ALevelBytes(w, h, storage);
+		levels++;
+		if (!mipmap || (w == 1 && h == 1) ||
+			(storage == XBOX_NV2A_IMAGE_DXT1 && (w < 8 || h < 8)))
+			break;
+		w = w > 1 ? w / 2 : 1;
+		h = h > 1 ? h / 2 : 1;
 	}
 	offset = (xboxNV2ATexturePoolUsed + XBOX_NV2A_TEXTURE_ALIGN - 1) &
 		~(size_t)(XBOX_NV2A_TEXTURE_ALIGN - 1);
@@ -553,31 +713,39 @@ static int XboxNV2AAddImage(const char *name, int width, int height,
 		Sys_XboxLog("Xbox NV2A: texture pool full, skipped %s\n", name);
 		return 0;
 	}
+	if (levels > 1) {
+		scratch = (byte *)malloc((size_t)(width > 1 ? width / 2 : 1) *
+			(size_t)(height > 1 ? height / 2 : 1) * 4);
+		if (!scratch)
+			levels = 1;
+	}
 
 	image = &xboxNV2AImages[xboxNV2AImageCount];
 	image->memory = xboxNV2ATexturePool + offset;
 	image->width = width;
 	image->height = height;
 	image->format = format;
+	image->levels = levels;
 	Q_strncpyz(image->name, name, sizeof(image->name));
-	if (storage == XBOX_NV2A_IMAGE_DXT1) {
-		XboxNV2ADxt_Compress(rgba, width, height, image->memory);
-		xboxNV2ADxtImageCount++;
-	} else {
-		for (y = 0; y < height; ++y) {
-			for (x = 0; x < width; ++x) {
-				const byte *texel = rgba + ((size_t)y * width + x) * 4;
-				unsigned int swizzled = XboxNV2ASwizzledOffset((unsigned int)x,
-					(unsigned int)y, (unsigned int)width, (unsigned int)height);
+	XboxNV2AUploadLevel(image->memory, rgba, width, height, storage, format);
+	if (levels > 1) {
+		byte *memory = (byte *)image->memory + XboxNV2ALevelBytes(width, height, storage);
+		int level;
 
-				if (storage == XBOX_NV2A_IMAGE_32BIT)
-					((uint32_t *)image->memory)[swizzled] = ((uint32_t)texel[3] << 24) |
-						((uint32_t)texel[0] << 16) | ((uint32_t)texel[1] << 8) | texel[2];
-				else
-					((uint16_t *)image->memory)[swizzled] = XboxNV2APackTexel(texel, format);
-			}
+		/* Level 1 comes from the caller's texels, the rest from the scratch copy in place. */
+		w = width;
+		h = height;
+		for (level = 1; level < levels; ++level) {
+			XboxNV2AHalve(level == 1 ? rgba : scratch, w, h, scratch);
+			w = w > 1 ? w / 2 : 1;
+			h = h > 1 ? h / 2 : 1;
+			XboxNV2AUploadLevel(memory, scratch, w, h, storage, format);
+			memory += XboxNV2ALevelBytes(w, h, storage);
 		}
+		free(scratch);
 	}
+	if (storage == XBOX_NV2A_IMAGE_DXT1)
+		xboxNV2ADxtImageCount++;
 	/* The GPU must not fetch a WC texture before its upload has completed. */
 	__asm__ __volatile__("sfence" ::: "memory");
 	xboxNV2ATexturePoolUsed = offset + textureSize;
@@ -596,7 +764,7 @@ int XboxNV2A_FindImage(const char *name)
 }
 
 int XboxNV2A_CreateImage(const char *name, int width, int height,
-	const byte *rgba, int storage)
+	const byte *rgba, int storage, qboolean mipmap)
 {
 	int index;
 
@@ -605,13 +773,44 @@ int XboxNV2A_CreateImage(const char *name, int width, int height,
 		width > XBOX_NV2A_MAX_TEXTURE_SIZE || height > XBOX_NV2A_MAX_TEXTURE_SIZE)
 		return 0;
 	index = XboxNV2A_FindImage(name);
-	return index ? index : XboxNV2AAddImage(name, width, height, rgba, storage);
+	return index ? index : XboxNV2AAddImage(name, width, height, rgba, storage, mipmap);
 }
 
 /* ioq3 keeps stageless shaders only for skies (here: with an outer box) and fog volumes. */
 static qboolean XboxNV2AShaderUsable(const XboxNV2AShader *shader)
 {
 	return shader->numStages > 0 || shader->isFog || (shader->isSky && shader->skyBox[0] > 0);
+}
+
+static qboolean XboxNV2AMultipliesDest(const xboxNV2AStage_t *stage)
+{
+	return (stage->srcBlend == GL_DST_COLOR && stage->dstBlend == GL_ZERO) ||
+		(stage->srcBlend == GL_ZERO && stage->dstBlend == GL_SRC_COLOR);
+}
+
+/* ioq3 CollapseMultitexture, GL_MODULATE rows only. The pair uses stage 0's colours,
+   so stage 1 must be white; ioq3 drops its rgbGen instead. */
+static qboolean XboxNV2ACanCollapse(const XboxNV2AShader *shader)
+{
+	const xboxNV2AStage_t *a = &shader->stages[0];
+	const xboxNV2AStage_t *b = &shader->stages[1];
+
+	if (!xboxNV2AMultitexture->integer || shader->numStages < 2 || shader->isSky)
+		return qfalse;
+	if (a->isLightmap && b->isLightmap)
+		return qfalse;
+	if (a->alphaFunc != b->alphaFunc || a->depthEqual != b->depthEqual)
+		return qfalse;
+	if (!(a->srcBlend == GL_ONE && a->dstBlend == GL_ZERO) && !XboxNV2AMultipliesDest(a))
+		return qfalse;
+	if (!XboxNV2AMultipliesDest(b))
+		return qfalse;
+	if (b->rgbGen != XBOX_NV2A_RGBGEN_IDENTITY && b->rgbGen != XBOX_NV2A_RGBGEN_IDENTITY_LIGHTING)
+		return qfalse;
+	if (b->alphaGen != XBOX_NV2A_ALPHAGEN_IDENTITY || a->alphaGen == XBOX_NV2A_ALPHAGEN_WAVE ||
+		b->adjustColorsForFog != XBOX_NV2A_ACFF_NONE)
+		return qfalse;
+	return qtrue;
 }
 
 /* Unresolved names are kept without stages so the loader does not retry them. */
@@ -683,6 +882,9 @@ qhandle_t XboxNV2A_CreateShader(const char *name, int flavor,
 					shader->stages[i].images[j] = XBOX_NV2A_WHITE_IMAGE;
 			}
 		}
+		shader->collapsed = XboxNV2ACanCollapse(shader);
+		if (shader->collapsed)
+			xboxNV2ACollapsedCount++;
 	}
 	xboxNV2AShaderCount++;
 	return XboxNV2AShaderUsable(shader) ? (qhandle_t)(xboxNV2AShaderCount - 1) : 0;
@@ -769,7 +971,7 @@ static int XboxNV2ACreateFogImage(void)
 		}
 	}
 	image = XboxNV2AAddImage("*fog", XBOX_NV2A_FOG_S, XBOX_NV2A_FOG_T, data,
-		XBOX_NV2A_IMAGE_32BIT);
+		XBOX_NV2A_IMAGE_32BIT, qfalse);
 	free(data);
 	return image;
 }
@@ -795,7 +997,7 @@ static int XboxNV2ACreateDlightImage(void)
 		}
 	}
 	return XboxNV2AAddImage("*dlight", XBOX_NV2A_DLIGHT_SIZE, XBOX_NV2A_DLIGHT_SIZE,
-		&data[0][0][0], XBOX_NV2A_IMAGE_32BIT);
+		&data[0][0][0], XBOX_NV2A_IMAGE_32BIT, qfalse);
 }
 
 static void XboxNV2AResetTextures(void)
@@ -817,7 +1019,8 @@ static void XboxNV2AResetTextures(void)
 	xboxNV2AShaderCount = XBOX_NV2A_WHITE_SHADER;
 	xboxNV2ATexturePoolUsed = 0;
 	xboxNV2ADxtImageCount = 0;
-	XboxNV2AAddImage("*white", 1, 1, whitePixel, XBOX_NV2A_IMAGE_16BIT);
+	xboxNV2ACollapsedCount = 0;
+	XboxNV2AAddImage("*white", 1, 1, whitePixel, XBOX_NV2A_IMAGE_16BIT, qfalse);
 	xboxNV2AFogImage = XboxNV2ACreateFogImage();
 	xboxNV2ADlightImage = XboxNV2ACreateDlightImage();
 
@@ -853,13 +1056,16 @@ static void XboxNV2ADrawVertices(XguPrimitiveType mode, unsigned int first,
 	p = push_command_parameter(p, NV097_BREAK_VERTEX_BUFFER_CACHE, 0);
 	pb_end(p);
 	xgux_draw_arrays(mode, first, count);
+	xboxNV2APerf.draws++;
+	xboxNV2APerf.verts += count;
 }
 
 /* Returns room for count vertices, rewinding the stream once the GPU is idle. */
 static XboxNV2AColoredVertex *XboxNV2AStreamVertices(unsigned int count)
 {
 	if (xboxNV2AVertexUsed + count > XBOX_NV2A_MAX_VERTS) {
-		XboxNV2AWaitIdle("vertex stream");
+		xboxNV2APerf.midWaitTicks += XboxNV2AWaitIdle("vertex stream");
+		xboxNV2APerf.streamWraps++;
 		xboxNV2AVertexUsed = 0;
 	}
 	return &xboxNV2AVertexMemory[xboxNV2AVertexUsed];
@@ -1052,39 +1258,37 @@ static void XboxNV2AComputeColors(const xboxNV2AStage_t *stage)
 	}
 }
 
-static void XboxNV2ATransformTexCoords(float m00, float m01, float m10, float m11,
-	float t0, float t1)
+static void XboxNV2ATransformTexCoords(float (*st)[2], float m00, float m01, float m10,
+	float m11, float t0, float t1)
 {
-	XboxNV2ATess *tess = &xboxNV2ATess;
 	int i;
 
-	for (i = 0; i < tess->numVerts; ++i) {
-		float s = tess->stageSt[i][0];
-		float t = tess->stageSt[i][1];
+	for (i = 0; i < xboxNV2ATess.numVerts; ++i) {
+		float s = st[i][0];
+		float t = st[i][1];
 
-		tess->stageSt[i][0] = s * m00 + t * m10 + t0;
-		tess->stageSt[i][1] = s * m01 + t * m11 + t1;
+		st[i][0] = s * m00 + t * m10 + t0;
+		st[i][1] = s * m01 + t * m11 + t1;
 	}
 }
 
-static void XboxNV2AScrollTexCoords(const float *speed)
+static void XboxNV2AScrollTexCoords(float (*st)[2], const float *speed)
 {
-	XboxNV2ATess *tess = &xboxNV2ATess;
-	double s = speed[0] * tess->shaderTime;
-	double t = speed[1] * tess->shaderTime;
+	double s = speed[0] * xboxNV2ATess.shaderTime;
+	double t = speed[1] * xboxNV2ATess.shaderTime;
 	int i;
 
 	/* ioq3 keeps the offset in [0,1) so coordinates stay small. */
 	s -= floor(s);
 	t -= floor(t);
-	for (i = 0; i < tess->numVerts; ++i) {
-		tess->stageSt[i][0] += (float)s;
-		tess->stageSt[i][1] += (float)t;
+	for (i = 0; i < xboxNV2ATess.numVerts; ++i) {
+		st[i][0] += (float)s;
+		st[i][1] += (float)t;
 	}
 }
 
-/* ioq3 ComputeTexCoords and the RB_Calc*TexCoords helpers. */
-static void XboxNV2AComputeTexCoords(const xboxNV2AStage_t *stage)
+/* ioq3 ComputeTexCoords and the RB_Calc*TexCoords helpers, into st. */
+static void XboxNV2AComputeTexCoords(const xboxNV2AStage_t *stage, float (*st)[2])
 {
 	XboxNV2ATess *tess = &xboxNV2ATess;
 	int n = tess->numVerts;
@@ -1100,18 +1304,18 @@ static void XboxNV2AComputeTexCoords(const xboxNV2AStage_t *stage)
 			d = DotProduct(tess->normal[i], viewer);
 			reflected[1] = tess->normal[i][1] * 2 * d - viewer[1];
 			reflected[2] = tess->normal[i][2] * 2 * d - viewer[2];
-			tess->stageSt[i][0] = 0.5f + reflected[1] * 0.5f;
-			tess->stageSt[i][1] = 0.5f - reflected[2] * 0.5f;
+			st[i][0] = 0.5f + reflected[1] * 0.5f;
+			st[i][1] = 0.5f - reflected[2] * 0.5f;
 		}
 	} else if (stage->tcGen == XBOX_NV2A_TCGEN_VECTOR) {
 		for (i = 0; i < n; ++i) {
-			tess->stageSt[i][0] = DotProduct(tess->xyz[i], stage->tcGenVectors[0]);
-			tess->stageSt[i][1] = DotProduct(tess->xyz[i], stage->tcGenVectors[1]);
+			st[i][0] = DotProduct(tess->xyz[i], stage->tcGenVectors[0]);
+			st[i][1] = DotProduct(tess->xyz[i], stage->tcGenVectors[1]);
 		}
 	} else if (stage->tcGen == XBOX_NV2A_TCGEN_LIGHTMAP) {
-		memcpy(tess->stageSt, tess->lightSt, (size_t)n * sizeof(tess->lightSt[0]));
+		memcpy(st, tess->lightSt, (size_t)n * sizeof(tess->lightSt[0]));
 	} else {
-		memcpy(tess->stageSt, tess->st, (size_t)n * sizeof(tess->st[0]));
+		memcpy(st, tess->st, (size_t)n * sizeof(tess->st[0]));
 	}
 
 	for (m = 0; m < stage->numTexMods; ++m) {
@@ -1127,35 +1331,35 @@ static void XboxNV2AComputeTexCoords(const xboxNV2AStage_t *stage)
 				int t = (int)((tess->xyz[i][1] * (1.0 / 128 * 0.125) + now) *
 					XBOX_NV2A_FUNCTABLE_SIZE);
 
-				tess->stageSt[i][0] += xboxNV2ASinTable[s & XBOX_NV2A_FUNCTABLE_MASK] *
+				st[i][0] += xboxNV2ASinTable[s & XBOX_NV2A_FUNCTABLE_MASK] *
 					mod->wave.amplitude;
-				tess->stageSt[i][1] += xboxNV2ASinTable[t & XBOX_NV2A_FUNCTABLE_MASK] *
+				st[i][1] += xboxNV2ASinTable[t & XBOX_NV2A_FUNCTABLE_MASK] *
 					mod->wave.amplitude;
 			}
 			break;
 		}
 		case XBOX_NV2A_TCMOD_ENTITY_TRANSLATE:
 			if (tess->entity)
-				XboxNV2AScrollTexCoords(tess->entity->shaderTexCoord);
+				XboxNV2AScrollTexCoords(st, tess->entity->shaderTexCoord);
 			break;
 		case XBOX_NV2A_TCMOD_SCROLL:
-			XboxNV2AScrollTexCoords(mod->scroll);
+			XboxNV2AScrollTexCoords(st, mod->scroll);
 			break;
 		case XBOX_NV2A_TCMOD_SCALE:
 			for (i = 0; i < n; ++i) {
-				tess->stageSt[i][0] *= mod->scale[0];
-				tess->stageSt[i][1] *= mod->scale[1];
+				st[i][0] *= mod->scale[0];
+				st[i][1] *= mod->scale[1];
 			}
 			break;
 		case XBOX_NV2A_TCMOD_STRETCH: {
 			float wave = XboxNV2AEvalWave(&mod->wave, tess->shaderTime);
 			float p = wave != 0.0f ? 1.0f / wave : 1.0f;
 
-			XboxNV2ATransformTexCoords(p, 0.0f, 0.0f, p, 0.5f - 0.5f * p, 0.5f - 0.5f * p);
+			XboxNV2ATransformTexCoords(st, p, 0.0f, 0.0f, p, 0.5f - 0.5f * p, 0.5f - 0.5f * p);
 			break;
 		}
 		case XBOX_NV2A_TCMOD_TRANSFORM:
-			XboxNV2ATransformTexCoords(mod->matrix[0][0], mod->matrix[0][1],
+			XboxNV2ATransformTexCoords(st, mod->matrix[0][0], mod->matrix[0][1],
 				mod->matrix[1][0], mod->matrix[1][1], mod->translate[0], mod->translate[1]);
 			break;
 		case XBOX_NV2A_TCMOD_ROTATE: {
@@ -1165,7 +1369,7 @@ static void XboxNV2AComputeTexCoords(const xboxNV2AStage_t *stage)
 			float cosValue = xboxNV2ASinTable[(index + XBOX_NV2A_FUNCTABLE_SIZE / 4) &
 				XBOX_NV2A_FUNCTABLE_MASK];
 
-			XboxNV2ATransformTexCoords(cosValue, sinValue, -sinValue, cosValue,
+			XboxNV2ATransformTexCoords(st, cosValue, sinValue, -sinValue, cosValue,
 				0.5f - 0.5f * cosValue + 0.5f * sinValue,
 				0.5f - 0.5f * sinValue - 0.5f * cosValue);
 			break;
@@ -1197,21 +1401,22 @@ static void XboxNV2AWriteVertex(XboxNV2AColoredVertex *out, int v)
 	out->position[0] = tess->xyz[v][0];
 	out->position[1] = tess->xyz[v][1];
 	out->position[2] = tess->xyz[v][2];
-	out->color[0] = tess->stageColor[v][0] * (1.0f / 255.0f);
-	out->color[1] = tess->stageColor[v][1] * (1.0f / 255.0f);
-	out->color[2] = tess->stageColor[v][2] * (1.0f / 255.0f);
-	out->color[3] = tess->stageColor[v][3] * (1.0f / 255.0f);
+	memcpy(out->color, tess->stageColor[v], 4);
 	out->texcoord[0] = tess->stageSt[v][0];
 	out->texcoord[1] = tess->stageSt[v][1];
+	out->texcoord1[0] = tess->multitexture ? tess->stageSt1[v][0] : 0.0f;
+	out->texcoord1[1] = tess->multitexture ? tess->stageSt1[v][1] : 0.0f;
 }
 
-/* A clip polygon corner: the streamed vertex plus its near and portal plane distances. */
+/* A clip polygon corner in floats, plus its near and portal plane distances. */
 typedef struct {
-	XboxNV2AColoredVertex v;
+	float position[3];
+	float color[4];
+	float st[2][2];
 	float dist[2];
 } XboxNV2AClipVertex;
 
-/* Sutherland-Hodgman against the near plane, then a portal view's plane; the rest is fanned. */
+/* Sutherland-Hodgman against the near plane, then a portal view's plane; returns the corners. */
 static unsigned int XboxNV2AClipTriangle(const unsigned short *triangle,
 	XboxNV2AColoredVertex *out)
 {
@@ -1223,9 +1428,19 @@ static unsigned int XboxNV2AClipTriangle(const unsigned short *triangle,
 	int p, k, j;
 
 	for (k = 0; k < 3; ++k) {
-		XboxNV2AWriteVertex(&polygons[0][k].v, triangle[k]);
-		polygons[0][k].dist[0] = tess->nearDist[triangle[k]];
-		polygons[0][k].dist[1] = planes > 1 ? tess->portalDist[triangle[k]] : 0.0f;
+		XboxNV2AClipVertex *c = &polygons[0][k];
+		int v = triangle[k];
+
+		for (j = 0; j < 3; ++j)
+			c->position[j] = tess->xyz[v][j];
+		for (j = 0; j < 4; ++j)
+			c->color[j] = tess->stageColor[v][j];
+		for (j = 0; j < 2; ++j) {
+			c->st[0][j] = tess->stageSt[v][j];
+			c->st[1][j] = tess->multitexture ? tess->stageSt1[v][j] : 0.0f;
+		}
+		c->dist[0] = tess->nearDist[v];
+		c->dist[1] = planes > 1 ? tess->portalDist[v] : 0.0f;
 	}
 	for (p = 0; p < planes; ++p) {
 		const XboxNV2AClipVertex *in = polygons[current];
@@ -1244,11 +1459,12 @@ static unsigned int XboxNV2AClipTriangle(const unsigned short *triangle,
 				float t = a->dist[p] / (a->dist[p] - b->dist[p]);
 
 				for (j = 0; j < 3; ++j)
-					c->v.position[j] = a->v.position[j] + t * (b->v.position[j] - a->v.position[j]);
+					c->position[j] = a->position[j] + t * (b->position[j] - a->position[j]);
 				for (j = 0; j < 4; ++j)
-					c->v.color[j] = a->v.color[j] + t * (b->v.color[j] - a->v.color[j]);
+					c->color[j] = a->color[j] + t * (b->color[j] - a->color[j]);
 				for (j = 0; j < 2; ++j) {
-					c->v.texcoord[j] = a->v.texcoord[j] + t * (b->v.texcoord[j] - a->v.texcoord[j]);
+					c->st[0][j] = a->st[0][j] + t * (b->st[0][j] - a->st[0][j]);
+					c->st[1][j] = a->st[1][j] + t * (b->st[1][j] - a->st[1][j]);
 					c->dist[j] = a->dist[j] + t * (b->dist[j] - a->dist[j]);
 				}
 			}
@@ -1258,12 +1474,19 @@ static unsigned int XboxNV2AClipTriangle(const unsigned short *triangle,
 		if (count < 3)
 			return 0;
 	}
-	for (k = 1; k + 1 < count; ++k) {
-		out[(k - 1) * 3 + 0] = polygons[current][0].v;
-		out[(k - 1) * 3 + 1] = polygons[current][k].v;
-		out[(k - 1) * 3 + 2] = polygons[current][k + 1].v;
+	for (k = 0; k < count; ++k) {
+		const XboxNV2AClipVertex *c = &polygons[current][k];
+
+		for (j = 0; j < 3; ++j)
+			out[k].position[j] = c->position[j];
+		for (j = 0; j < 4; ++j)
+			out[k].color[j] = (byte)(c->color[j] + 0.5f);
+		for (j = 0; j < 2; ++j) {
+			out[k].texcoord[j] = c->st[0][j];
+			out[k].texcoord1[j] = c->st[1][j];
+		}
 	}
-	return (unsigned int)(3 * (count - 2));
+	return (unsigned int)count;
 }
 
 static qboolean XboxNV2AVertexClipped(int v)
@@ -1272,47 +1495,70 @@ static qboolean XboxNV2AVertexClipped(int v)
 		(xboxNV2AViewIsPortal && xboxNV2ATess.portalDist[v] < 0.0f);
 }
 
-/* Triangles stream in chunks; a full stream is drawn, then rewound once the GPU is idle. */
+static qboolean XboxNV2ATriangleCrosses(const unsigned short *triangle)
+{
+	return xboxNV2ATess.clip && (XboxNV2AVertexClipped(triangle[0]) ||
+		XboxNV2AVertexClipped(triangle[1]) || XboxNV2AVertexClipped(triangle[2]));
+}
+
+/* Inline 16-bit indexes after a vertex cache break, as the NV2A has no index buffers. */
+static void XboxNV2ADrawElements(const unsigned short *elements, unsigned int count)
+{
+	uint32_t *p;
+
+	/* xgux_draw_elements16: begin and end, 120 index pairs per block, a last odd index alone. */
+	XboxNV2AReserve(12 + count / 2 + count / 240);
+	p = pb_begin();
+	p = push_command_parameter(p, NV097_BREAK_VERTEX_BUFFER_CACHE, 0);
+	pb_end(p);
+	xgux_draw_elements16(XGU_TRIANGLES, elements, count);
+	xboxNV2APerf.draws++;
+	xboxNV2APerf.indexes += count;
+}
+
+/* Tess vertices stream once; a triangle crossing the near or portal plane adds its clipped corners. */
 static void XboxNV2ADrawTriangles(const unsigned short *indexes, int numIndexes)
 {
-	const XboxNV2ATess *tess = &xboxNV2ATess;
-	unsigned int first = xboxNV2AVertexUsed;
-	unsigned int written = 0;
-	int i;
+	XboxNV2ATess *tess = &xboxNV2ATess;
+	unsigned short *elements = tess->drawIndexes;
+	unsigned int crossing = 0;
+	unsigned int count = 0;
+	unsigned int base, extra;
+	XboxNV2AColoredVertex *out;
+	int i, k;
 
+	for (i = 0; tess->clip && i + 2 < numIndexes; i += 3) {
+		if (XboxNV2ATriangleCrosses(&indexes[i]))
+			crossing++;
+	}
+	out = XboxNV2AStreamVertices((unsigned int)tess->numVerts +
+		crossing * (XBOX_NV2A_CLIP_VERTS - 1));
+	base = xboxNV2AVertexUsed;
+	for (k = 0; k < tess->numVerts; ++k)
+		XboxNV2AWriteVertex(&out[k], k);
+	extra = (unsigned int)tess->numVerts;
 	for (i = 0; i + 2 < numIndexes; i += 3) {
 		const unsigned short *triangle = &indexes[i];
-		XboxNV2AColoredVertex clipped[3 * (XBOX_NV2A_CLIP_VERTS - 2)];
-		unsigned int count = 3;
-		qboolean crosses = tess->clip && (XboxNV2AVertexClipped(triangle[0]) ||
-			XboxNV2AVertexClipped(triangle[1]) || XboxNV2AVertexClipped(triangle[2]));
-		XboxNV2AColoredVertex *out;
 
-		if (crosses) {
-			count = XboxNV2AClipTriangle(triangle, clipped);
-			if (!count)
-				continue;
+		if (XboxNV2ATriangleCrosses(triangle)) {
+			unsigned int corners = XboxNV2AClipTriangle(triangle, &out[extra]);
+
+			for (k = 1; k + 1 < (int)corners; ++k) {
+				elements[count++] = (unsigned short)(base + extra);
+				elements[count++] = (unsigned short)(base + extra + k);
+				elements[count++] = (unsigned short)(base + extra + k + 1);
+			}
+			extra += corners;
+			continue;
 		}
-		if (first + written + count > XBOX_NV2A_MAX_VERTS) {
-			if (written)
-				XboxNV2ADrawVertices(XGU_TRIANGLES, first, written);
-			XboxNV2AWaitIdle("vertex stream");
-			first = 0;
-			written = 0;
-		}
-		out = &xboxNV2AVertexMemory[first + written];
-		if (crosses) {
-			memcpy(out, clipped, count * sizeof(*out));
-		} else {
-			XboxNV2AWriteVertex(&out[0], triangle[0]);
-			XboxNV2AWriteVertex(&out[1], triangle[1]);
-			XboxNV2AWriteVertex(&out[2], triangle[2]);
-		}
-		written += count;
+		elements[count++] = (unsigned short)(base + triangle[0]);
+		elements[count++] = (unsigned short)(base + triangle[1]);
+		elements[count++] = (unsigned short)(base + triangle[2]);
 	}
-	if (written)
-		XboxNV2ADrawVertices(XGU_TRIANGLES, first, written);
-	xboxNV2AVertexUsed = first + written;
+	xboxNV2AVertexUsed = base + extra;
+	xboxNV2APerf.verts += extra;
+	if (count)
+		XboxNV2ADrawElements(elements, count);
 }
 
 /* A mirror view flips the culled side. */
@@ -1323,9 +1569,9 @@ static int XboxNV2AViewCull(int cull)
 	return cull == XBOX_NV2A_CULL_FRONT ? XBOX_NV2A_CULL_BACK : XBOX_NV2A_CULL_FRONT;
 }
 
-/* Draws the computed stage colours and texcoords. */
-static void XboxNV2ASubmitStage(const xboxNV2AStage_t *stage, int image, int cull,
-	qboolean polygonOffset)
+/* Draws the computed stage colours and texcoords; image1 is unit 1's image. */
+static void XboxNV2ASubmitStage(const xboxNV2AStage_t *stage, int image, int image1,
+	qboolean clamp1, int cull, qboolean polygonOffset)
 {
 	XboxNV2ATess *tess = &xboxNV2ATess;
 	xboxNV2AStage_t skyStage;
@@ -1338,8 +1584,8 @@ static void XboxNV2ASubmitStage(const xboxNV2AStage_t *stage, int image, int cul
 		skyStage.depthWrite = qfalse;
 		stage = &skyStage;
 	}
-	XboxNV2AApplyStageState(stage, image, tess->is3D, tess->is3D, XboxNV2AViewCull(cull),
-		polygonOffset);
+	XboxNV2AApplyStageState(stage, image, image1, clamp1, tess->is3D, tess->is3D,
+		XboxNV2AViewCull(cull), polygonOffset);
 	if (tess->is3D) {
 		XboxNV2ADrawTriangles(tess->indexes, tess->numIndexes);
 		return;
@@ -1351,13 +1597,40 @@ static void XboxNV2ASubmitStage(const xboxNV2AStage_t *stage, int image, int cul
 	xboxNV2AVertexUsed += count;
 }
 
-/* Draws one stage: 2D tess holds quads in order, 3D tess holds indexed triangles. */
-static void XboxNV2ADrawStage(const xboxNV2AStage_t *stage, int cull, qboolean polygonOffset)
+/* Draws one stage, or with second a collapsed pair: stage's colours times both images. */
+static void XboxNV2ADrawStage(const xboxNV2AStage_t *stage, const xboxNV2AStage_t *second,
+	int cull, qboolean polygonOffset)
 {
+	XboxNV2ATess *tess = &xboxNV2ATess;
+	int image1 = XBOX_NV2A_WHITE_IMAGE;
+	qboolean clamp1 = qtrue;
+
 	XboxNV2AComputeColors(stage);
-	XboxNV2AComputeTexCoords(stage);
-	XboxNV2ASubmitStage(stage, XboxNV2AStageImage(stage, xboxNV2ATess.shaderTime), cull,
-		polygonOffset);
+	XboxNV2AComputeTexCoords(stage, tess->stageSt);
+	if (second) {
+		XboxNV2AComputeTexCoords(second, tess->stageSt1);
+		image1 = XboxNV2AStageImage(second, tess->shaderTime);
+		clamp1 = second->clamp;
+		tess->multitexture = qtrue;
+	}
+	XboxNV2ASubmitStage(stage, XboxNV2AStageImage(stage, tess->shaderTime), image1, clamp1,
+		cull, polygonOffset);
+	tess->multitexture = qfalse;
+}
+
+/* A collapsed shader draws stages 0 and 1 in one pass, as ioq3 DrawMultitextured. */
+static void XboxNV2ADrawShaderStages(const XboxNV2AShader *shader, int cull,
+	qboolean polygonOffset)
+{
+	int i;
+
+	for (i = 0; i < shader->numStages; ++i) {
+		const xboxNV2AStage_t *second = i == 0 && shader->collapsed ? &shader->stages[1] : NULL;
+
+		XboxNV2ADrawStage(&shader->stages[i], second, cull, polygonOffset);
+		if (second)
+			++i;
+	}
 }
 
 /* ioq3 RB_FogPass: the fog image blended over the surface; opaque shaders need equal depth. */
@@ -1384,7 +1657,8 @@ static void XboxNV2AFogPass(const XboxNV2AShader *shader)
 	for (i = 0; i < tess->numVerts; ++i)
 		memcpy(tess->stageColor[i], fog->color, 4);
 	XboxNV2ACalcFogTexCoords(tess->stageSt);
-	XboxNV2ASubmitStage(&stage, xboxNV2AFogImage, shader->cull, shader->polygonOffset);
+	XboxNV2ASubmitStage(&stage, xboxNV2AFogImage, XBOX_NV2A_WHITE_IMAGE, qtrue, shader->cull,
+		shader->polygonOffset);
 }
 
 /* ioq3 ProjectDlightTexture: one pass per dlight over the triangles its blob reaches. */
@@ -1476,7 +1750,8 @@ static void XboxNV2ADlightPass(const XboxNV2AShader *shader)
 				"radius %d triangles %d/%d\n", xboxNV2AFrameCount, shader->name, l, numDlights,
 				(int)dl->radius, numIndexes / 3, tess->numIndexes / 3);
 		}
-		XboxNV2AApplyStageState(&stage, xboxNV2ADlightImage, qtrue, qtrue,
+		XboxNV2AApplyStageState(&stage, xboxNV2ADlightImage, XBOX_NV2A_WHITE_IMAGE, qtrue,
+			qtrue, qtrue,
 			XboxNV2AViewCull(shader->cull), shader->polygonOffset);
 		XboxNV2ADrawTriangles(tess->dlightIndexes, numIndexes);
 	}
@@ -1759,8 +2034,7 @@ static void XboxNV2AEndSurface(void)
 				shader->stages[0].images[0],
 				xboxNV2AImages[shader->stages[0].images[0]].width,
 				xboxNV2AImages[shader->stages[0].images[0]].height);
-		for (i = 0; i < shader->numStages; ++i)
-			XboxNV2ADrawStage(&shader->stages[i], shader->cull, shader->polygonOffset);
+		XboxNV2ADrawShaderStages(shader, shader->cull, shader->polygonOffset);
 		/* ioq3 RB_StageIteratorGeneric: dlights after the stages, before fog, on opaque shaders. */
 		if (tess->is3D && tess->dlightBits && shader->sort <= XBOX_NV2A_SORT_OPAQUE &&
 			!shader->noDlight)
@@ -1835,10 +2109,12 @@ static void XboxNV2ASetFrameState(void)
 		xgux_set_attrib_pointer((XguVertexArray)i, XGU_FLOAT, 0, 0, NULL);
 	xgux_set_attrib_pointer(XGU_VERTEX_ARRAY, XGU_FLOAT, 3, sizeof(*v),
 		&v[0].position[0]);
-	xgux_set_attrib_pointer(XGU_COLOR_ARRAY, XGU_FLOAT, 4, sizeof(*v),
+	xgux_set_attrib_pointer(XGU_COLOR_ARRAY, XBOX_NV2A_VERTEX_UB_OGL, 4, sizeof(*v),
 		&v[0].color[0]);
 	xgux_set_attrib_pointer(XGU_TEXCOORD0_ARRAY, XGU_FLOAT, 2, sizeof(*v),
 		&v[0].texcoord[0]);
+	xgux_set_attrib_pointer(XGU_TEXCOORD1_ARRAY, XGU_FLOAT, 2, sizeof(*v),
+		&v[0].texcoord1[0]);
 }
 
 static void XboxNV2AReleaseMemory(void)
@@ -1913,6 +2189,10 @@ qboolean XboxNV2A_Init(void)
 
 	xboxNV2AFastSky = Cvar_Get("r_fastsky", "0", CVAR_ARCHIVE);
 	xboxNV2ADynamicLight = Cvar_Get("r_dynamiclight", "1", CVAR_ARCHIVE);
+	/* ioq3's cvar, read when a shader is created, so a change applies from the next map. */
+	xboxNV2AMultitexture = Cvar_Get("r_ext_multitexture", "1", CVAR_ARCHIVE);
+	/* ioq3's cvar and default: 0 stops waiting for a vblank at every frame start. */
+	xboxNV2ASwapInterval = Cvar_Get("r_swapInterval", "0", CVAR_ARCHIVE);
 	xboxNV2AInitialized = qtrue;
 	XboxNV2AResetTextures();
 	xboxNV2ADebugScreen = qfalse;
@@ -1930,8 +2210,9 @@ void XboxNV2A_Shutdown(qboolean destroyWindow)
 	if (!xboxNV2AInitialized)
 		return;
 	XboxNV2AWaitIdle("shutdown");
-	Sys_XboxLog("Xbox NV2A: %u images (%u DXT1), %u shaders, %u KiB texture pool used\n",
-		xboxNV2AImageCount, xboxNV2ADxtImageCount, xboxNV2AShaderCount,
+	Sys_XboxLog("Xbox NV2A: %u images (%u DXT1), %u shaders (%u multitexture), "
+		"%u KiB texture pool used\n", xboxNV2AImageCount, xboxNV2ADxtImageCount,
+		xboxNV2AShaderCount, xboxNV2ACollapsedCount,
 		(unsigned int)(xboxNV2ATexturePoolUsed / 1024));
 	/* The world, models and skins hold shader handles, so all tables reset together. */
 	XboxNV2AWorld_Free();
@@ -2004,6 +2285,8 @@ void XboxNV2A_BeginRegistration(glconfig_t *config)
 /* Frame start follows the xgu samples: vblank, reset, target, idle, then clear. */
 void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 {
+	LONGLONG now;
+
 	(void)stereoFrame;
 	if (!xboxNV2AInitialized)
 		return;
@@ -2012,10 +2295,26 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 	if (xboxNV2AFrameCount <= XBOX_NV2A_TRACE_FRAMES ||
 		xboxNV2AFrameCount % XBOX_NV2A_HEARTBEAT_FRAMES == 0)
 		Sys_XboxLog("Xbox NV2A: frame %u begin\n", xboxNV2AFrameCount);
-	pb_wait_for_vbl();
+	if (xboxNV2AFrameCount % XBOX_NV2A_HEARTBEAT_FRAMES == 0)
+		XboxNV2ALogPerf();
+	now = XboxNV2ATicks();
+	if (xboxNV2APerf.lastBegin) {
+		xboxNV2APerf.frameTicks += now - xboxNV2APerf.lastBegin;
+		xboxNV2APerf.frames++;
+	}
+	xboxNV2APerf.lastBegin = now;
+	/* pbkit rotates 3 buffers; this frame's one leaves the screen with the flip queued two frames ago. */
+	if (xboxNV2ASwapInterval->integer) {
+		pb_wait_for_vbl();
+	} else if (xboxNV2AFlipsQueued >= 2) {
+		while ((int)(pb_get_vbl_counter() - xboxNV2AFlipShow[0]) < 0)
+			pb_wait_for_vbl();
+	}
+	xboxNV2APerf.vblankTicks += XboxNV2ATicks() - now;
 	pb_reset();
 	pb_target_back_buffer();
-	XboxNV2AWaitIdle("begin frame");
+	xboxNV2APerf.endWaitTicks += XboxNV2AWaitIdle("begin frame");
+	xboxNV2APerf.sceneStart = XboxNV2ATicks();
 	xboxNV2APushedDwords = 0;
 	xboxNV2AVertexUsed = 0;
 	xboxNV2ATess.shader = 0;
@@ -2034,7 +2333,8 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 
 		memcpy(v, xboxNV2ATriangle, sizeof(xboxNV2ATriangle));
 		XboxNV2AApplyStageState(&xboxNV2AShaders[XBOX_NV2A_WHITE_SHADER].stages[0],
-			XBOX_NV2A_WHITE_IMAGE, qfalse, qfalse, XBOX_NV2A_CULL_NONE, qfalse);
+			XBOX_NV2A_WHITE_IMAGE, XBOX_NV2A_WHITE_IMAGE, qtrue, qfalse, qfalse,
+			XBOX_NV2A_CULL_NONE, qfalse);
 		XboxNV2ADrawVertices(XGU_TRIANGLES, xboxNV2AVertexUsed,
 			XBOX_NV2A_TRIANGLE_VERTS);
 		xboxNV2AVertexUsed += XBOX_NV2A_TRIANGLE_VERTS;
@@ -2044,6 +2344,8 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 void XboxNV2A_EndFrame(int *frontEndMsec, int *backEndMsec)
 {
 	DWORD start;
+	DWORD show;
+	LONGLONG waitStart;
 
 	if (frontEndMsec)
 		*frontEndMsec = 0;
@@ -2053,6 +2355,7 @@ void XboxNV2A_EndFrame(int *frontEndMsec, int *backEndMsec)
 		return;
 
 	XboxNV2AEndSurface();
+	xboxNV2APerf.sceneTicks += XboxNV2ATicks() - xboxNV2APerf.sceneStart;
 	/* ioq3 R_InitNextFrame: scene entities, dlights and polys last one frame. */
 	xboxNV2ASceneEntityCount = 0;
 	xboxNV2ASceneFirstEntity = 0;
@@ -2062,6 +2365,7 @@ void XboxNV2A_EndFrame(int *frontEndMsec, int *backEndMsec)
 	xboxNV2APolyVertCount = 0;
 	xboxNV2ASceneFirstPoly = 0;
 	xboxNV2AInFrame = qfalse;
+	waitStart = XboxNV2ATicks();
 	XboxNV2AWaitIdle("end frame");
 	if (XBOX_NV2A_DIAGNOSTICS)
 		pb_draw_text_screen();
@@ -2070,6 +2374,16 @@ void XboxNV2A_EndFrame(int *frontEndMsec, int *backEndMsec)
 		if (GetTickCount() - start > XBOX_NV2A_GPU_TIMEOUT_MS)
 			Sys_Error("Xbox NV2A: flip timeout, frame %u", xboxNV2AFrameCount);
 	}
+	/* Idle means the flip interrupt ran, so it shows at the next vblank or after the one before it. */
+	XboxNV2AWaitIdle("flip");
+	show = pb_get_vbl_counter() + 1;
+	if (xboxNV2AFlipsQueued && (int)(show - xboxNV2AFlipShow[1]) <= 0)
+		show = xboxNV2AFlipShow[1] + 1;
+	xboxNV2AFlipShow[0] = xboxNV2AFlipShow[1];
+	xboxNV2AFlipShow[1] = show;
+	if (xboxNV2AFlipsQueued < 2)
+		xboxNV2AFlipsQueued++;
+	xboxNV2APerf.endWaitTicks += XboxNV2ATicks() - waitStart;
 	if (xboxNV2AFrameCount <= XBOX_NV2A_TRACE_FRAMES)
 		Sys_XboxLog("Xbox NV2A: frame %u end\n", xboxNV2AFrameCount);
 }
@@ -2146,7 +2460,7 @@ void XboxNV2A_UploadCinematic(int cols, int rows, const byte *data, int client,
 	if (!resized && !dirty)
 		return;
 	/* An earlier draw in this frame may still sample the old texels. */
-	XboxNV2AWaitIdle("cinematic upload");
+	xboxNV2APerf.midWaitTicks += XboxNV2AWaitIdle("cinematic upload");
 	if (resized) {
 		if (image->memory)
 			MmFreeContiguousMemory(image->memory);
@@ -2181,7 +2495,7 @@ void XboxNV2A_UploadCinematic(int cols, int rows, const byte *data, int client,
 	}
 	__asm__ __volatile__("sfence" ::: "memory");
 	/* The NV2A texture cache has no documented flush, so rebind as for a new texture. */
-	xboxNV2ABoundImage = -1;
+	xboxNV2ABoundImage[0] = xboxNV2ABoundImage[1] = -1;
 }
 
 /* ioq3 RE_StretchRaw: an opaque 2D quad with half-texel insets, in submission order. */
@@ -2212,8 +2526,8 @@ void XboxNV2A_DrawStretchRaw(int x, int y, int w, int h, int cols, int rows,
 	stage.clamp = qtrue;
 	stage.srcBlend = GL_ONE;
 	stage.dstBlend = GL_ZERO;
-	XboxNV2AApplyStageState(&stage, XBOX_NV2A_MAX_IMAGES + client, qfalse, qfalse,
-		XBOX_NV2A_CULL_NONE, qfalse);
+	XboxNV2AApplyStageState(&stage, XBOX_NV2A_MAX_IMAGES + client, XBOX_NV2A_WHITE_IMAGE, qtrue,
+		qfalse, qfalse, XBOX_NV2A_CULL_NONE, qfalse);
 
 	s1 = 0.5f / cols;
 	t1 = 0.5f / rows;
@@ -2225,9 +2539,11 @@ void XboxNV2A_DrawStretchRaw(int x, int y, int w, int h, int cols, int rows,
 		out[i].position[1] = y + h * corners[i][1];
 		out[i].position[2] = 1.0f;
 		for (k = 0; k < 4; ++k)
-			out[i].color[k] = 1.0f;
+			out[i].color[k] = 255;
 		out[i].texcoord[0] = corners[i][0] ? s2 : s1;
 		out[i].texcoord[1] = corners[i][1] ? t2 : t1;
+		out[i].texcoord1[0] = 0.0f;
+		out[i].texcoord1[1] = 0.0f;
 	}
 	XboxNV2ADrawVertices(XGU_QUADS, xboxNV2AVertexUsed, 4);
 	xboxNV2AVertexUsed += 4;
@@ -2986,7 +3302,7 @@ static void XboxNV2ADrawBeam(const refEntity_t *e)
 	stage.rgbGen = XBOX_NV2A_RGBGEN_CONST;
 	stage.constant[0] = 255;
 	if (XboxNV2AComputeNearDistances())
-		XboxNV2ADrawStage(&stage, XBOX_NV2A_CULL_NONE, qfalse);
+		XboxNV2ADrawStage(&stage, NULL, XBOX_NV2A_CULL_NONE, qfalse);
 	tess->numVerts = 0;
 	tess->numIndexes = 0;
 }
@@ -3122,14 +3438,13 @@ static void XboxNV2ADrawSky(const refdef_t *fd, float zFar, const XboxNV2ASky *s
 				continue;
 			/* ioq3 draws tr.defaultImage for a missing side; white stands in for it here. */
 			stage.images[0] = image > 0 ? image : XBOX_NV2A_WHITE_IMAGE;
-			XboxNV2ADrawStage(&stage, XBOX_NV2A_CULL_NONE, qfalse);
+			XboxNV2ADrawStage(&stage, NULL, XBOX_NV2A_CULL_NONE, qfalse);
 		}
 	}
 	tess->numVerts = XboxNV2ASky_Clouds(&sky->bounds, shader->cloudHeight, boxSize, tess->xyz,
 		tess->st, tess->indexes, &tess->numIndexes);
 	if (XboxNV2APrepareSkyTess()) {
-		for (i = 0; i < shader->numStages; ++i)
-			XboxNV2ADrawStage(&shader->stages[i], XBOX_NV2A_CULL_NONE, qfalse);
+		XboxNV2ADrawShaderStages(shader, XBOX_NV2A_CULL_NONE, qfalse);
 	}
 	tess->isSky = qfalse;
 	tess->shader = 0;
