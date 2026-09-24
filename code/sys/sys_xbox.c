@@ -506,6 +506,7 @@ void Sys_Error(const char *format, ...)
 
 void Sys_Quit(void)
 {
+	NET_Shutdown();
 	XboxNV2A_Kill();
 	Sys_XboxPlatformShutdown();
 	exit(0);

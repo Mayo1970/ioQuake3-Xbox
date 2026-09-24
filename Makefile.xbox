@@ -14,6 +14,7 @@ SRCS = \
 	$(CURDIR)/code/sys/xbox_snd_engine.c \
 	$(CURDIR)/code/sys/xbox_ref.c \
 	$(CURDIR)/code/sys/xbox_diag.c \
+	$(CURDIR)/code/sys/xbox_net.c \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a.c 	$(CURDIR)/code/renderernv2a/xbox_nv2a_shader.c 	$(CURDIR)/code/renderernv2a/xbox_nv2a_model.c 	$(CURDIR)/code/renderernv2a/xbox_nv2a_world.c 	$(CURDIR)/code/renderernv2a/xbox_nv2a_sky.c 	$(CURDIR)/code/renderercommon/tr_image_tga.c 	$(CURDIR)/code/renderercommon/tr_image_jpg.c \
 	$(CURDIR)/code/renderercommon/tr_noise.c \
 	$(CURDIR)/code/sys/xbox_qcommon.c \

@@ -37,6 +37,8 @@ int main(void)
 		"+set com_hunkMegs " XBOX_STRINGIFY(XBOX_COM_HUNK_MEGS)
 		" +set com_zoneMegs " XBOX_STRINGIFY(XBOX_COM_ZONE_MEGS)
 		" +set com_soundMegs " XBOX_STRINGIFY(XBOX_COM_SOUND_MEGS)
+		/* IPv4 only, as on the PS3, PS4 and Wii U ports. */
+		" +set net_enabled 1"
 		/* DIAGNOSTIC: ioq3's own netchan fragment and server-message trace; remove after. */
 		" +set showpackets 1 +set cl_shownet 2"
 #ifdef XBOX_DIAG_NO_CINEMATIC
@@ -50,8 +52,11 @@ int main(void)
 	Sys_XboxLog("ioQuake3\n");
 	Sys_XboxLog("Xbox startup budget: hunk=%d MiB zone=%d MiB sound=%d units\n",
 		XBOX_COM_HUNK_MEGS, XBOX_COM_ZONE_MEGS, XBOX_COM_SOUND_MEGS);
+	/* Before Com_Init, so the DHCP/link-local wait still shows on the debug screen. */
+	Sys_XboxNetInit();
 	Sys_XboxMemoryReport("before Com_Init");
 	Com_Init(commandLine);
+	NET_Init();
 	Sys_XboxMemoryReport("after Com_Init");
 	/* The Xbox renderer never calls ri.IN_Init, and bindings need Com_Init done. */
 	IN_Init(NULL);
@@ -88,6 +93,7 @@ int main(void)
 		{
 			IN_Shutdown();
 			Com_Shutdown();
+			NET_Shutdown();
 			return 0;
 		}
 	}

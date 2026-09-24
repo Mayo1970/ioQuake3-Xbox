@@ -1,5 +1,5 @@
 /src/code/sys/xbox_boot.obj: /src/code/sys/xbox_boot.c \
-  /src/code/sys/sys_xbox.h /usr/src/nxdk/lib/pdclib/include/stdio.h \
+  /src/code/sys/sys_xbox.h /usr/src/nxdk/lib/pdclib/include/stdint.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_lib_ext1.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_int.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/pdclib/_PDCLIB_config.h \
@@ -10,6 +10,7 @@
   /usr/src/nxdk/lib/xboxrt/libc_extensions/stdlib_ext_.h \
   /usr/src/nxdk/lib/xboxrt/libc_extensions/string_ext_.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
+  /usr/src/nxdk/lib/pdclib/include/stdio.h \
   /src/code/sys/../qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
@@ -18,7 +19,6 @@
   /usr/src/nxdk/lib/pdclib/include/stddef.h \
   /usr/src/nxdk/lib/pdclib/include/stdlib.h \
   /usr/src/nxdk/lib/xboxrt/libc_extensions/wchar.h \
-  /usr/src/nxdk/lib/pdclib/include/stdint.h \
   /usr/src/nxdk/lib/pdclib/include/wctype.h \
   /usr/src/nxdk/lib/xboxrt/libc_extensions/wchar_ext_.h \
   /usr/src/nxdk/lib/pdclib/include/time.h \
@@ -43,7 +43,7 @@
   /usr/src/nxdk/lib/xboxkrnl/xboxdef.h \
   /usr/src/nxdk/lib/xboxkrnl/ntstatus.h
 /src/code/sys/sys_xbox.h:
-/usr/src/nxdk/lib/pdclib/include/stdio.h:
+/usr/src/nxdk/lib/pdclib/include/stdint.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_lib_ext1.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_int.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/pdclib/_PDCLIB_config.h:
@@ -54,6 +54,7 @@
 /usr/src/nxdk/lib/xboxrt/libc_extensions/stdlib_ext_.h:
 /usr/src/nxdk/lib/xboxrt/libc_extensions/string_ext_.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
+/usr/src/nxdk/lib/pdclib/include/stdio.h:
 /src/code/sys/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
@@ -62,7 +63,6 @@
 /usr/src/nxdk/lib/pdclib/include/stddef.h:
 /usr/src/nxdk/lib/pdclib/include/stdlib.h:
 /usr/src/nxdk/lib/xboxrt/libc_extensions/wchar.h:
-/usr/src/nxdk/lib/pdclib/include/stdint.h:
 /usr/src/nxdk/lib/pdclib/include/wctype.h:
 /usr/src/nxdk/lib/xboxrt/libc_extensions/wchar_ext_.h:
 /usr/src/nxdk/lib/pdclib/include/time.h:

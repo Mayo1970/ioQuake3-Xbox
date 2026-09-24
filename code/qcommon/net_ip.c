@@ -32,9 +32,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #	include <ws2tcpip.h>
 #	if WINVER < 0x501
 #		ifdef __MINGW32__
-			// wspiapi.h isn't available on MinGW, so if it's
-			// present it's because the end user has added it
-			// and we should look for it in our tree
+			// MinGW has no wspiapi.h, so if present the user added it to our tree
 #			include "wspiapi.h"
 #		else
 #			include <wspiapi.h>
@@ -79,6 +77,9 @@ typedef int SOCKET;
 #	define SOCKET_ERROR		-1
 typedef unsigned long ioctlarg_t;
 #	define socketError		errno
+// lwIP reports a drained non-blocking socket as EWOULDBLOCK; pdclib keeps it apart from EAGAIN.
+#	undef EAGAIN
+#	define EAGAIN				EWOULDBLOCK
 #	ifndef IPV6_MULTICAST_IF
 #		define IPV6_MULTICAST_IF 17
 #	endif
@@ -176,11 +177,6 @@ static int numIP;
 //=============================================================================
 
 
-/*
-====================
-NET_ErrorString
-====================
-*/
 char *NET_ErrorString( void ) {
 #if defined(_WIN32) && !defined(XBOX)
 	//FIXME: replace with FormatMessage?
@@ -291,11 +287,6 @@ static struct addrinfo *SearchAddrInfo(struct addrinfo *hints, sa_family_t famil
 	return NULL;
 }
 
-/*
-=============
-Sys_StringToSockaddr
-=============
-*/
 static qboolean Sys_StringToSockaddr(const char *s, struct sockaddr *sadr, int sadr_len, sa_family_t family)
 {
 	struct addrinfo hints;
@@ -310,7 +301,12 @@ static qboolean Sys_StringToSockaddr(const char *s, struct sockaddr *sadr, int s
 	hintsp = &hints;
 	hintsp->ai_family = family;
 	hintsp->ai_socktype = SOCK_DGRAM;
-	
+
+#if defined(XBOX)
+	if(!Sys_XboxNetReady())
+		return qfalse;
+#endif
+
 	retval = getaddrinfo(s, NULL, hintsp, &res);
 
 	if(!retval)
@@ -360,11 +356,6 @@ static qboolean Sys_StringToSockaddr(const char *s, struct sockaddr *sadr, int s
 	return qfalse;
 }
 
-/*
-=============
-Sys_SockaddrToString
-=============
-*/
 static void Sys_SockaddrToString(char *dest, int destlen, struct sockaddr *input)
 {
 	socklen_t inputlen;
@@ -387,11 +378,6 @@ static void Sys_SockaddrToString(char *dest, int destlen, struct sockaddr *input
 #endif
 }
 
-/*
-=============
-Sys_StringToAdr
-=============
-*/
 qboolean Sys_StringToAdr( const char *s, netadr_t *a, netadrtype_t family ) {
 	struct sockaddr_storage sadr;
 	sa_family_t fam;
@@ -416,13 +402,7 @@ qboolean Sys_StringToAdr( const char *s, netadr_t *a, netadrtype_t family ) {
 	return qtrue;
 }
 
-/*
-===================
-NET_CompareBaseAdrMask
-
-Compare without port, and up to the bit number given in netmask.
-===================
-*/
+// Compare without port, and up to the bit number given in netmask.
 qboolean NET_CompareBaseAdrMask(netadr_t a, netadr_t b, int netmask)
 {
 	byte cmpmask, *addra, *addrb;
@@ -477,13 +457,7 @@ qboolean NET_CompareBaseAdrMask(netadr_t a, netadr_t b, int netmask)
 }
 
 
-/*
-===================
-NET_CompareBaseAdr
-
-Compares without the port
-===================
-*/
+// Compares without the port
 qboolean NET_CompareBaseAdr (netadr_t a, netadr_t b)
 {
 	return NET_CompareBaseAdrMask(a, b, -1);
@@ -549,13 +523,7 @@ qboolean	NET_IsLocalAddress( netadr_t adr ) {
 
 //=============================================================================
 
-/*
-==================
-NET_GetPacket
-
-Receive one packet
-==================
-*/
+// Receive one packet
 qboolean NET_GetPacket(netadr_t *net_from, msg_t *net_message, fd_set *fdr)
 {
 	int 	ret;
@@ -671,11 +639,6 @@ qboolean NET_GetPacket(netadr_t *net_from, msg_t *net_message, fd_set *fdr)
 
 static char socksBuf[4096];
 
-/*
-==================
-Sys_SendPacket
-==================
-*/
 void Sys_SendPacket( int length, const void *data, netadr_t to ) {
 	int				ret = SOCKET_ERROR;
 	struct sockaddr_storage	addr;
@@ -734,13 +697,7 @@ void Sys_SendPacket( int length, const void *data, netadr_t to ) {
 
 //=============================================================================
 
-/*
-==================
-Sys_IsLANAddress
-
-LAN clients will have their rate var ignored
-==================
-*/
+// LAN clients will have their rate var ignored
 qboolean Sys_IsLANAddress( netadr_t adr ) {
 	int		index, run, addrsize;
 	qboolean differed;
@@ -752,10 +709,7 @@ qboolean Sys_IsLANAddress( netadr_t adr ) {
 
 	if( adr.type == NA_IP )
 	{
-		// RFC1918:
-		// 10.0.0.0        -   10.255.255.255  (10/8 prefix)
-		// 172.16.0.0      -   172.31.255.255  (172.16/12 prefix)
-		// 192.168.0.0     -   192.168.255.255 (192.168/16 prefix)
+		// RFC1918: 10/8, 172.16/12 and 192.168/16
 		if(adr.ip[0] == 10)
 			return qtrue;
 		if(adr.ip[0] == 172 && (adr.ip[1]&0xf0) == 16)
@@ -817,11 +771,6 @@ qboolean Sys_IsLANAddress( netadr_t adr ) {
 	return qfalse;
 }
 
-/*
-==================
-Sys_ShowIP
-==================
-*/
 void Sys_ShowIP(void) {
 	int i;
 	char addrbuf[NET_ADDRSTRMAXLEN];
@@ -841,11 +790,6 @@ void Sys_ShowIP(void) {
 //=============================================================================
 
 
-/*
-====================
-NET_IPSocket
-====================
-*/
 SOCKET NET_IPSocket( char *net_interface, int port, int *err ) {
 	SOCKET				newsocket;
 	struct sockaddr_in	address;
@@ -909,11 +853,6 @@ SOCKET NET_IPSocket( char *net_interface, int port, int *err ) {
 	return newsocket;
 }
 
-/*
-====================
-NET_IP6Socket
-====================
-*/
 SOCKET NET_IP6Socket( char *net_interface, int port, struct sockaddr_in6 *bindto, int *err ) {
 	SOCKET				newsocket;
 	struct sockaddr_in6	address;
@@ -992,12 +931,7 @@ SOCKET NET_IP6Socket( char *net_interface, int port, struct sockaddr_in6 *bindto
 	return newsocket;
 }
 
-/*
-====================
-NET_SetMulticast
-Set the current multicast group
-====================
-*/
+// Set the current multicast group
 void NET_SetMulticast6(void)
 {
 	struct sockaddr_in6 addr;
@@ -1026,12 +960,7 @@ void NET_SetMulticast6(void)
 		curgroup.ipv6mr_interface = 0;
 }
 
-/*
-====================
-NET_JoinMulticast
-Join an ipv6 multicast group
-====================
-*/
+// Join an ipv6 multicast group
 void NET_JoinMulticast6(void)
 {
 	int err;
@@ -1095,11 +1024,6 @@ void NET_LeaveMulticast6(void)
 	}
 }
 
-/*
-====================
-NET_OpenSocks
-====================
-*/
 void NET_OpenSocks( int port ) {
 	struct sockaddr_in	address;
 	struct hostent		*h;
@@ -1262,11 +1186,6 @@ void NET_OpenSocks( int port ) {
 }
 
 
-/*
-=====================
-NET_AddLocalAddress
-=====================
-*/
 static void NET_AddLocalAddress(char *ifname, struct sockaddr *addr, struct sockaddr *netmask)
 {
 	int addrlen;
@@ -1307,7 +1226,23 @@ static void NET_AddLocalAddress(char *ifname, struct sockaddr *addr, struct sock
 #if defined(XBOX)
 static void NET_GetLocalAddress(void)
 {
+	struct sockaddr_in addr;
+	struct sockaddr_in mask;
+	uint32_t ip, netmask;
+
 	numIP = 0;
+	if(!Sys_XboxNetAddress(&ip, &netmask))
+		return;
+
+	memset(&addr, 0, sizeof(addr));
+	memset(&mask, 0, sizeof(mask));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = ip;
+	mask.sin_family = AF_INET;
+	mask.sin_addr.s_addr = netmask;
+	// Link-local System Link peers (169.254/16) only count as LAN through this subnet.
+	NET_AddLocalAddress("nforce", (struct sockaddr *) &addr, (struct sockaddr *) &mask);
+	Sys_ShowIP();
 }
 #elif defined(__linux__) || defined(__APPLE__) || defined(__BSD__)
 static void NET_GetLocalAddress(void)
@@ -1383,11 +1318,6 @@ static void NET_GetLocalAddress( void ) {
 }
 #endif
 
-/*
-====================
-NET_OpenIP
-====================
-*/
 void NET_OpenIP( void ) {
 	int		i;
 	int		err;
@@ -1399,9 +1329,8 @@ void NET_OpenIP( void ) {
 
 	NET_GetLocalAddress();
 
-	// automatically scan for a valid port, so multiple
-	// dedicated servers can be started without requiring
-	// a different net_port for each one
+	// automatically scan for a valid port, so multiple dedicated servers
+	// can be started without a different net_port for each one
 
 	if(net_enabled->integer & NET_ENABLEV6)
 	{
@@ -1451,11 +1380,6 @@ void NET_OpenIP( void ) {
 //===================================================================
 
 
-/*
-====================
-NET_GetCvars
-====================
-*/
 static qboolean NET_GetCvars( void ) {
 	int modified;
 
@@ -1525,11 +1449,6 @@ static qboolean NET_GetCvars( void ) {
 }
 
 
-/*
-====================
-NET_Config
-====================
-*/
 void NET_Config( qboolean enableNetworking ) {
 	qboolean	modified;
 	qboolean	stop;
@@ -1541,6 +1460,11 @@ void NET_Config( qboolean enableNetworking ) {
 	if( !net_enabled->integer ) {
 		enableNetworking = 0;
 	}
+#if defined(XBOX)
+	if( !Sys_XboxNetReady() ) {
+		enableNetworking = 0;
+	}
+#endif
 
 	// if enable state is the same and no cvars were modified, we have nothing to do
 	if( enableNetworking == networkingEnabled && !modified ) {
@@ -1606,11 +1530,6 @@ void NET_Config( qboolean enableNetworking ) {
 }
 
 
-/*
-====================
-NET_Init
-====================
-*/
 void NET_Init( void ) {
 #if defined(_WIN32) && !defined(XBOX)
 	int		r;
@@ -1631,11 +1550,6 @@ void NET_Init( void ) {
 }
 
 
-/*
-====================
-NET_Shutdown
-====================
-*/
 void NET_Shutdown( void ) {
 	if ( !networkingEnabled ) {
 		return;
@@ -1649,13 +1563,7 @@ void NET_Shutdown( void ) {
 #endif
 }
 
-/*
-====================
-NET_Event
-
-Called from NET_Sleep which uses select() to determine which sockets have seen action.
-====================
-*/
+// Called from NET_Sleep which uses select() to determine which sockets have seen action.
 
 void NET_Event(fd_set *fdr)
 {
@@ -1686,13 +1594,7 @@ void NET_Event(fd_set *fdr)
 	}
 }
 
-/*
-====================
-NET_Sleep
-
-Sleeps msec or until something happens on the network
-====================
-*/
+// Sleeps msec or until something happens on the network
 void NET_Sleep(int msec)
 {
 	struct timeval timeout;
@@ -1784,11 +1686,6 @@ void NET_Sleep(int msec)
 	}
 }
 
-/*
-====================
-NET_Restart_f
-====================
-*/
 void NET_Restart_f(void)
 {
 	NET_Config(qtrue);

@@ -3,6 +3,7 @@
 #ifndef IOQUAKE3_SYS_XBOX_H
 #define IOQUAKE3_SYS_XBOX_H
 
+#include <stdint.h>
 #include <stdio.h>
 
 void Sys_XboxLogOpen(void);
@@ -19,6 +20,11 @@ int Sys_XboxExitRequested(void);
 const char *Sys_XboxBasePath(void);
 const char *Sys_XboxHomePath(void);
 FILE *Sys_XboxOpenGameFile(const char *qpath, const char *mode);
+
+/* lwIP socket calls block forever until Sys_XboxNetInit has started its core. */
+void Sys_XboxNetInit(void);
+int Sys_XboxNetReady(void);
+int Sys_XboxNetAddress(uint32_t *ip, uint32_t *netmask);
 
 void Sys_XboxPlatformInit(void);
 void Sys_XboxPlatformShutdown(void);

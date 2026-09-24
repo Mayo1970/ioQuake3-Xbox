@@ -185,7 +185,7 @@ map transition.
 
 ### G2 — Platform services
 
-Status: **in progress (priority 3) — all services validated except networking**
+Status: **in progress (priority 3) — all services validated except keyboard and mouse**
 
 - `Sys_*`: timing, sleep, exit/error handling, paths, directory enumeration and
   conservative memory reporting live in `code/sys/sys_xbox.c`. **Done.** [HIGH]
@@ -202,12 +202,14 @@ Status: **in progress (priority 3) — all services validated except networking*
   and `SE_MOUSE` events. Needs a USB-to-controller-port adapter. [MEDIUM]
 - Sound: native AC97 PCM service with contiguous DMA buffer allocation, a
   refill callback, silence fallback and pause/shutdown control. **Done.** [HIGH]
-- Networking: **not started.** Add UDP/System Link only after the single-player
-  loop is stable. [MEDIUM]
+- Networking: UDP/IPv4 over nxdk lwIP (`code/sys/xbox_net.c`), started with the
+  dashboard settings before `Com_Init`, as on the PS3/PS4/Wii U ports. When DHCP
+  times out, it falls back to link-local 169.254/16 for System Link. LAN play
+  **done on hardware** (XBE md5 `5c5041e3...`). [HIGH]
 
 Exit: the executable reaches the running qcommon/client engine shell without
 SDL, desktop OpenGL, or proprietary XDK dependencies, with the native services
-connected to the full qcommon/client boundary. Met, except networking. [HIGH]
+connected to the full qcommon/client boundary. Met. [HIGH]
 
 ### G6 — Performance and robustness
 
@@ -255,7 +257,7 @@ Future work uses these gates instead of an unconditional smoke-test loop:
   hashes.
 
 Passed on hardware (V3): the engine shell, menu, MD3 models, BSP world, sky,
-cinematics and bot games. Outstanding: combat effects (V3), G5 packaging, G6
+cinematics, bot games and LAN networking. Outstanding: combat effects (V3), G5 packaging, G6
 robustness and V4 acceptance. [HIGH]
 
 ## Definition of done
