@@ -1742,6 +1742,17 @@ void NET_Sleep(int msec)
 	}
 #endif
 
+#if defined(XBOX)
+	if(highestfd == INVALID_SOCKET)
+	{
+		if(xboxSleepTrace)
+			Sys_XboxLog("Xbox NET_Sleep %d: no sockets; Sys_Sleep(%d)\n",
+				xboxSleepDiagCalls, msec);
+		Sys_Sleep(msec);
+		return;
+	}
+#endif
+
 	timeout.tv_sec = msec/1000;
 	timeout.tv_usec = (msec%1000)*1000;
 

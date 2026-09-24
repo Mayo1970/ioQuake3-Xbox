@@ -66,6 +66,34 @@ SRCS = \
 	$(CURDIR)/code/server/sv_net_chan.c \
 	$(CURDIR)/code/server/sv_snapshot.c \
 	$(CURDIR)/code/server/sv_world.c \
+	$(CURDIR)/code/botlib/be_aas_bspq3.c \
+	$(CURDIR)/code/botlib/be_aas_cluster.c \
+	$(CURDIR)/code/botlib/be_aas_debug.c \
+	$(CURDIR)/code/botlib/be_aas_entity.c \
+	$(CURDIR)/code/botlib/be_aas_file.c \
+	$(CURDIR)/code/botlib/be_aas_main.c \
+	$(CURDIR)/code/botlib/be_aas_move.c \
+	$(CURDIR)/code/botlib/be_aas_optimize.c \
+	$(CURDIR)/code/botlib/be_aas_reach.c \
+	$(CURDIR)/code/botlib/be_aas_route.c \
+	$(CURDIR)/code/botlib/be_aas_routealt.c \
+	$(CURDIR)/code/botlib/be_aas_sample.c \
+	$(CURDIR)/code/botlib/be_ai_char.c \
+	$(CURDIR)/code/botlib/be_ai_chat.c \
+	$(CURDIR)/code/botlib/be_ai_gen.c \
+	$(CURDIR)/code/botlib/be_ai_goal.c \
+	$(CURDIR)/code/botlib/be_ai_move.c \
+	$(CURDIR)/code/botlib/be_ai_weap.c \
+	$(CURDIR)/code/botlib/be_ai_weight.c \
+	$(CURDIR)/code/botlib/be_ea.c \
+	$(CURDIR)/code/botlib/be_interface.c \
+	$(CURDIR)/code/botlib/l_crc.c \
+	$(CURDIR)/code/botlib/l_libvar.c \
+	$(CURDIR)/code/botlib/l_log.c \
+	$(CURDIR)/code/botlib/l_memory.c \
+	$(CURDIR)/code/botlib/l_precomp.c \
+	$(CURDIR)/code/botlib/l_script.c \
+	$(CURDIR)/code/botlib/l_struct.c \
 	$(CURDIR)/code/asm/ftola.c \
 	$(CURDIR)/code/asm/snapvector.c 	$(wildcard $(CURDIR)/code/thirdparty/jpeg-9f/j*.c)
 
