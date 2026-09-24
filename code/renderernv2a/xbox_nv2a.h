@@ -14,6 +14,10 @@
 #define XBOX_NV2A_MAX_STAGES 8
 #define XBOX_NV2A_MAX_TEXMODS 4
 #define XBOX_NV2A_MAX_ANIM_IMAGES 8
+/* ioq3 MAX_SHADER_DEFORMS. */
+#define XBOX_NV2A_MAX_DEFORMS 3
+/* ioq3 MAX_DLIGHTS; a surface's dlightBits has one bit per scene dlight. */
+#define XBOX_NV2A_MAX_DLIGHTS 32
 /* Same per-surface limits as ioq3's tess (SHADER_MAX_VERTEXES/INDEXES). */
 #define XBOX_NV2A_TESS_VERTS 1000
 #define XBOX_NV2A_TESS_INDEXES (6 * XBOX_NV2A_TESS_VERTS)
@@ -90,6 +94,27 @@ typedef struct {
 	float scroll[2];
 	float rotateSpeed;
 } xboxNV2ATexMod_t;
+
+/* ioq3 deform_t; text and projectionShadow are not supported. */
+typedef enum {
+	XBOX_NV2A_DEFORM_WAVE,
+	XBOX_NV2A_DEFORM_NORMALS,
+	XBOX_NV2A_DEFORM_BULGE,
+	XBOX_NV2A_DEFORM_MOVE,
+	XBOX_NV2A_DEFORM_AUTOSPRITE,
+	XBOX_NV2A_DEFORM_AUTOSPRITE2
+} xboxNV2ADeformType_t;
+
+/* ioq3 deformStage_t. */
+typedef struct {
+	int type;
+	xboxNV2AWave_t wave;
+	float spread;
+	vec3_t moveVector;
+	float bulgeWidth;
+	float bulgeHeight;
+	float bulgeSpeed;
+} xboxNV2ADeform_t;
 
 typedef enum {
 	XBOX_NV2A_RGBGEN_IDENTITY_LIGHTING,
@@ -192,6 +217,10 @@ typedef struct {
 	int fogPass;
 	/* alphaGen portal range; ioq3 skips portal views farther than this. */
 	float portalRange;
+	/* surfaceparm nodlight or sky: ioq3 draws no dlight pass on it. */
+	qboolean noDlight;
+	int numDeforms;
+	xboxNV2ADeform_t deforms[XBOX_NV2A_MAX_DEFORMS];
 	xboxNV2AStage_t stages[XBOX_NV2A_MAX_STAGES];
 } xboxNV2AShaderDef_t;
 
@@ -218,6 +247,8 @@ typedef struct {
 	qboolean noMarks;
 	int fogIndex;
 	int viewCount;
+	/* Scene dlights that reach it in the current view, as in ioq3's surface dlightBits. */
+	unsigned int dlightBits;
 	cplane_t plane;
 	vec3_t bounds[2];
 	int numVerts;
@@ -234,6 +265,13 @@ typedef struct {
 	qboolean hasSurface;
 	float surface[4];
 } xboxNV2AFog_t;
+
+/* ioq3 dlight_t; radius is the intensity passed to AddLightToScene. */
+typedef struct {
+	vec3_t origin;
+	float radius;
+	vec3_t color;
+} xboxNV2ADlight_t;
 
 /* ioq3 sky_mins/sky_maxs: the (s, t) range of each box side that visible sky covers. */
 typedef struct {
@@ -273,6 +311,7 @@ void XboxNV2A_ClearScene(void);
 void XboxNV2A_AddRefEntity(const refEntity_t *entity);
 void XboxNV2A_AddLight(const vec3_t origin, float intensity, float r, float g,
 	float b);
+int XboxNV2A_SceneDlights(const xboxNV2ADlight_t **dlights);
 void XboxNV2A_AddWorldSurface(const xboxNV2AWorldSurface_t *surface, int entity);
 void XboxNV2A_AddSkySurface(const xboxNV2AWorldSurface_t *surface);
 void XboxNV2A_AddPoly(qhandle_t shader, int numVerts, const polyVert_t *verts,
@@ -305,7 +344,7 @@ void XboxNV2AWorld_Load(const char *name);
 void XboxNV2AWorld_Free(void);
 qboolean XboxNV2AWorld_Loaded(void);
 float XboxNV2AWorld_AddSurfaces(const refdef_t *fd, const vec3_t pvsOrigin);
-void XboxNV2AWorld_AddBrushModel(int submodel, int entity);
+void XboxNV2AWorld_AddBrushModel(int submodel, int entity, const refEntity_t *ref);
 void XboxNV2AWorld_SubmodelBounds(int submodel, vec3_t mins, vec3_t maxs);
 void XboxNV2AWorld_SunDirection(vec3_t direction);
 qboolean XboxNV2AWorld_LightGrid(const vec3_t origin, vec3_t ambient,

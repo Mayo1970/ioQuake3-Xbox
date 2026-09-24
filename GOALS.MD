@@ -197,6 +197,9 @@ Status: **in progress (priority 3) — all services validated except networking*
   buttons/triggers, sticks, hot-plug callbacks and disconnect clearing. State
   goes through the `IN_*` boundary into `SE_KEY` and `SE_JOYSTICK_AXIS` events.
   **Done on hardware.** [HIGH]
+- Keyboard and mouse: **not started.** Enable the nxdk HID class driver
+  (`NXDK_USB_ENABLE_HID`, libusbohci `src_hid`) and map its reports to `SE_KEY`
+  and `SE_MOUSE` events. Needs a USB-to-controller-port adapter. [MEDIUM]
 - Sound: native AC97 PCM service with contiguous DMA buffer allocation, a
   refill callback, silence fallback and pause/shutdown control. **Done.** [HIGH]
 - Networking: **not started.** Add UDP/System Link only after the single-player

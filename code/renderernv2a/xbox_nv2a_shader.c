@@ -615,6 +615,48 @@ static void XboxShaderParseSkyParms(char **text, xboxNV2AShaderDef_t *def)
 	def->isSky = qtrue;
 }
 
+/* ioq3 ParseDeform; unsupported subtypes are skipped instead of kept as no-op deforms. */
+static void XboxShaderParseDeform(char **text, xboxNV2AShaderDef_t *def)
+{
+	xboxNV2ADeform_t *deform;
+	char *token = COM_ParseExt(text, qfalse);
+	int i;
+
+	if (!token[0] || def->numDeforms == XBOX_NV2A_MAX_DEFORMS)
+		return;
+	deform = &def->deforms[def->numDeforms];
+	memset(deform, 0, sizeof(*deform));
+	if (!Q_stricmp(token, "autosprite")) {
+		deform->type = XBOX_NV2A_DEFORM_AUTOSPRITE;
+	} else if (!Q_stricmp(token, "autosprite2")) {
+		deform->type = XBOX_NV2A_DEFORM_AUTOSPRITE2;
+	} else if (!Q_stricmp(token, "bulge")) {
+		deform->type = XBOX_NV2A_DEFORM_BULGE;
+		deform->bulgeWidth = atof(COM_ParseExt(text, qfalse));
+		deform->bulgeHeight = atof(COM_ParseExt(text, qfalse));
+		deform->bulgeSpeed = atof(COM_ParseExt(text, qfalse));
+	} else if (!Q_stricmp(token, "wave")) {
+		float div = atof(COM_ParseExt(text, qfalse));
+
+		/* ioq3 uses a spread of 100 when the divisor is 0. */
+		deform->type = XBOX_NV2A_DEFORM_WAVE;
+		deform->spread = div != 0.0f ? 1.0f / div : 100.0f;
+		XboxShaderParseWave(text, &deform->wave);
+	} else if (!Q_stricmp(token, "normal")) {
+		deform->type = XBOX_NV2A_DEFORM_NORMALS;
+		deform->wave.amplitude = atof(COM_ParseExt(text, qfalse));
+		deform->wave.frequency = atof(COM_ParseExt(text, qfalse));
+	} else if (!Q_stricmp(token, "move")) {
+		deform->type = XBOX_NV2A_DEFORM_MOVE;
+		for (i = 0; i < 3; ++i)
+			deform->moveVector[i] = atof(COM_ParseExt(text, qfalse));
+		XboxShaderParseWave(text, &deform->wave);
+	} else {
+		return;
+	}
+	def->numDeforms++;
+}
+
 static float XboxShaderParseSort(const char *token)
 {
 	if (!Q_stricmp(token, "portal"))
@@ -685,9 +727,14 @@ static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def)
 			sortSet = qtrue;
 		} else if (!Q_stricmp(token, "polygonOffset")) {
 			def->polygonOffset = qtrue;
+		} else if (!Q_stricmp(token, "deformVertexes")) {
+			XboxShaderParseDeform(&p, def);
 		} else if (!Q_stricmp(token, "surfaceparm")) {
-			if (!Q_stricmp(COM_ParseExt(&p, qfalse), "fog"))
+			token = COM_ParseExt(&p, qfalse);
+			if (!Q_stricmp(token, "fog"))
 				def->isFog = qtrue;
+			else if (!Q_stricmp(token, "nodlight") || !Q_stricmp(token, "sky"))
+				def->noDlight = qtrue;
 		} else if (!Q_stricmp(token, "fogParms")) {
 			/* ioq3 ParseVector wants "( r g b )"; without it the parms are ignored. */
 			vec3_t color = {-1.0f, -1.0f, -1.0f};

@@ -80,6 +80,10 @@ typedef struct {
 	int viewCount;
 	cplane_t frustum[4];
 	vec3_t visBounds[2];
+	/* Scene dlights, with origins in the space of the surfaces being added. */
+	const xboxNV2ADlight_t *dlights;
+	int numDlights;
+	vec3_t dlightOrigins[XBOX_NV2A_MAX_DLIGHTS];
 } xboxWorld_t;
 
 static xboxWorld_t xboxWorld;
@@ -831,8 +835,60 @@ static void XboxWorldMarkLeaves(const refdef_t *fd, const vec3_t pvsOrigin)
 	}
 }
 
+/* ioq3 R_TransformDlights: loads the scene dlights in ref's space, or world space without ref. */
+static unsigned int XboxWorldLoadDlights(const refEntity_t *ref)
+{
+	int i, k;
+
+	xboxWorld.numDlights = XboxNV2A_SceneDlights(&xboxWorld.dlights);
+	for (i = 0; i < xboxWorld.numDlights; ++i) {
+		vec3_t delta;
+
+		if (!ref) {
+			VectorCopy(xboxWorld.dlights[i].origin, xboxWorld.dlightOrigins[i]);
+			continue;
+		}
+		VectorSubtract(xboxWorld.dlights[i].origin, ref->origin, delta);
+		for (k = 0; k < 3; ++k)
+			xboxWorld.dlightOrigins[i][k] = DotProduct(delta, ref->axis[k]);
+	}
+	return xboxWorld.numDlights >= XBOX_NV2A_MAX_DLIGHTS ? ~0u :
+		(1u << xboxWorld.numDlights) - 1;
+}
+
+/* ioq3 R_DlightSurface: faces test their plane, grids their bounds, soups keep every dlight. */
+static unsigned int XboxWorldDlightSurface(const xboxNV2AWorldSurface_t *surface,
+	unsigned int dlightBits)
+{
+	int i, k;
+
+	for (i = 0; i < xboxWorld.numDlights; ++i) {
+		const float *origin = xboxWorld.dlightOrigins[i];
+		float radius = xboxWorld.dlights[i].radius;
+
+		if (!(dlightBits & (1u << i)))
+			continue;
+		if (surface->type == XBOX_NV2A_SURFACE_FACE) {
+			float d = DotProduct(origin, surface->plane.normal) - surface->plane.dist;
+
+			if (d < -radius || d > radius)
+				dlightBits &= ~(1u << i);
+		} else if (surface->type == XBOX_NV2A_SURFACE_GRID) {
+			for (k = 0; k < 3; ++k) {
+				if (origin[k] - radius > surface->bounds[1][k] ||
+					origin[k] + radius < surface->bounds[0][k])
+					break;
+			}
+			if (k < 3)
+				dlightBits &= ~(1u << i);
+		}
+	}
+	return dlightBits;
+}
+
 /* ioq3 R_AddWorldSurface and R_CullSurface; sky surfaces go to the sky box instead. */
-static void XboxWorldAddSurface(xboxNV2AWorldSurface_t *surface, const vec3_t viewOrigin)
+static void XboxWorldAddSurface(xboxNV2AWorldSurface_t *surface, const vec3_t viewOrigin,
+	unsigned int dlightBits)
 {
 	qboolean sky;
 	int cull;
@@ -861,19 +917,23 @@ static void XboxWorldAddSurface(xboxNV2AWorldSurface_t *surface, const vec3_t vi
 				return;
 		}
 	}
-	if (sky)
+	if (sky) {
 		XboxNV2A_AddSkySurface(surface);
-	else
-		XboxNV2A_AddWorldSurface(surface, XBOX_NV2A_WORLD_ENTITY);
+		return;
+	}
+	surface->dlightBits = dlightBits ? XboxWorldDlightSurface(surface, dlightBits) : 0;
+	XboxNV2A_AddWorldSurface(surface, XBOX_NV2A_WORLD_ENTITY);
 }
 
-/* ioq3 R_RecursiveWorldNode: planeBits drop the frustum planes a node lies fully inside. */
+/* ioq3 R_RecursiveWorldNode: planeBits drop frustum planes, dlightBits the dlights out of reach. */
 static void XboxWorldRecursiveNode(xboxWorldNode_t *node, int planeBits,
-	const vec3_t viewOrigin)
+	unsigned int dlightBits, const vec3_t viewOrigin)
 {
 	int i;
 
 	for (;;) {
+		unsigned int newDlights[2] = {0, 0};
+
 		if (node->visFrame != xboxWorld.visCount)
 			return;
 		for (i = 0; i < 4; ++i) {
@@ -888,14 +948,27 @@ static void XboxWorldRecursiveNode(xboxWorldNode_t *node, int planeBits,
 		}
 		if (node->contents != -1)
 			break;
-		XboxWorldRecursiveNode(node->children[0], planeBits, viewOrigin);
+		for (i = 0; i < xboxWorld.numDlights; ++i) {
+			float dist;
+
+			if (!(dlightBits & (1u << i)))
+				continue;
+			dist = DotProduct(xboxWorld.dlightOrigins[i], node->plane->normal) -
+				node->plane->dist;
+			if (dist > -xboxWorld.dlights[i].radius)
+				newDlights[0] |= 1u << i;
+			if (dist < xboxWorld.dlights[i].radius)
+				newDlights[1] |= 1u << i;
+		}
+		XboxWorldRecursiveNode(node->children[0], planeBits, newDlights[0], viewOrigin);
 		node = node->children[1];
+		dlightBits = newDlights[1];
 	}
 	AddPointToBounds(node->mins, xboxWorld.visBounds[0], xboxWorld.visBounds[1]);
 	AddPointToBounds(node->maxs, xboxWorld.visBounds[0], xboxWorld.visBounds[1]);
 	for (i = 0; i < node->numMarks; ++i)
 		XboxWorldAddSurface(&xboxWorld.surfaces[xboxWorld.marks[node->firstMark + i]],
-			viewOrigin);
+			viewOrigin, dlightBits);
 }
 
 /* Adds the visible world surfaces and returns ioq3 R_SetFarClip's far plane distance. */
@@ -910,7 +983,7 @@ float XboxNV2AWorld_AddSurfaces(const refdef_t *fd, const vec3_t pvsOrigin)
 	XboxWorldSetupFrustum(fd);
 	XboxWorldMarkLeaves(fd, pvsOrigin);
 	ClearBounds(xboxWorld.visBounds[0], xboxWorld.visBounds[1]);
-	XboxWorldRecursiveNode(xboxWorld.nodes, 15, fd->vieworg);
+	XboxWorldRecursiveNode(xboxWorld.nodes, 15, XboxWorldLoadDlights(NULL), fd->vieworg);
 	if (xboxWorld.visBounds[0][0] > xboxWorld.visBounds[1][0])
 		return XBOX_WORLD_DEFAULT_ZFAR;
 	for (i = 0; i < 8; ++i) {
@@ -929,19 +1002,38 @@ float XboxNV2AWorld_AddSurfaces(const refdef_t *fd, const vec3_t pvsOrigin)
 }
 
 /* ioq3 R_AddBrushModelSurfaces; the GPU applies the entity transform. */
-void XboxNV2AWorld_AddBrushModel(int submodel, int entity)
+void XboxNV2AWorld_AddBrushModel(int submodel, int entity, const refEntity_t *ref)
 {
 	const xboxWorldModel_t *model;
-	int i;
+	unsigned int dlightBits, mask = 0;
+	int i, k;
 
 	if (!xboxWorld.loaded || submodel <= 0 || submodel >= xboxWorld.numModels)
 		return;
 	model = &xboxWorld.models[submodel];
-	for (i = 0; i < model->numSurfaces; ++i) {
-		const xboxNV2AWorldSurface_t *surface = &xboxWorld.surfaces[model->firstSurface + i];
+	/* ioq3 R_DlightBmodel: the dlights whose sphere touches the model's local bounds. */
+	dlightBits = XboxWorldLoadDlights(ref);
+	for (i = 0; i < xboxWorld.numDlights; ++i) {
+		const float *origin = xboxWorld.dlightOrigins[i];
+		float radius = xboxWorld.dlights[i].radius;
 
-		if (XboxNV2A_ShaderIsDrawable(surface->shader))
-			XboxNV2A_AddWorldSurface(surface, entity);
+		for (k = 0; k < 3; ++k) {
+			if (origin[k] - model->bounds[1][k] > radius ||
+				model->bounds[0][k] - origin[k] > radius)
+				break;
+		}
+		if (k == 3)
+			mask |= 1u << i;
+	}
+	mask &= dlightBits;
+	for (i = 0; i < model->numSurfaces; ++i) {
+		xboxNV2AWorldSurface_t *surface = &xboxWorld.surfaces[model->firstSurface + i];
+
+		if (!XboxNV2A_ShaderIsDrawable(surface->shader))
+			continue;
+		/* ioq3 passes needDlights (0 or 1) here, so only dlight 0 reached bmodels. */
+		surface->dlightBits = mask ? XboxWorldDlightSurface(surface, mask) : 0;
+		XboxNV2A_AddWorldSurface(surface, entity);
 	}
 }
 
