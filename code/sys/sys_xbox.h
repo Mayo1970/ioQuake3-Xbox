@@ -29,4 +29,7 @@ int Sys_XboxNetAddress(uint32_t *ip, uint32_t *netmask);
 void Sys_XboxPlatformInit(void);
 void Sys_XboxPlatformShutdown(void);
 
+/* Nonzero when vm.c should load the linked-in module instead of a QVM. */
+int Sys_XboxUseBuiltinModule(const char *name);
+
 #endif

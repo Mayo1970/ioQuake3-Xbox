@@ -26,7 +26,8 @@
   /usr/src/nxdk/lib/pdclib/include/limits.h \
   /src/code/qcommon/q_platform.h /src/code/qcommon/surfaceflags.h \
   /src/code/qcommon/qcommon.h /src/code/qcommon/../qcommon/cm_public.h \
-  /src/code/qcommon/../qcommon/qfiles.h
+  /src/code/qcommon/../qcommon/qfiles.h \
+  /src/code/qcommon/../sys/sys_xbox.h
 /src/code/qcommon/vm_local.h:
 /src/code/qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
@@ -58,3 +59,4 @@
 /src/code/qcommon/qcommon.h:
 /src/code/qcommon/../qcommon/cm_public.h:
 /src/code/qcommon/../qcommon/qfiles.h:
+/src/code/qcommon/../sys/sys_xbox.h:

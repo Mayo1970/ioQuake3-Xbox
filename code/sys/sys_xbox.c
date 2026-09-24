@@ -383,18 +383,8 @@ void *Sys_LoadDll(const char *name, qboolean useSystemLib)
 	return NULL;
 }
 
-void Sys_UnloadDll(void *handle) { (void)handle; }
 qboolean Sys_DllExtension(const char *name) { (void)name; return qfalse; }
 const char *Sys_LibraryError(void) { return "dynamic libraries are not supported on Xbox"; }
-
-void *Sys_LoadGameDll(const char *name, vmMainProc *entryPoint,
-	intptr_t (QDECL *systemcalls)(intptr_t, ...))
-{
-	(void)name;
-	(void)entryPoint;
-	(void)systemcalls;
-	return NULL;
-}
 
 void Sys_SetEnv(const char *name, const char *value)
 {

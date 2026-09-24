@@ -30,7 +30,7 @@ engineering assumption, and `[LOW]` an item requiring implementation evidence.
   Xbox hardware and reached the running frame loop without the nxdk `strtod()`
   assertion or command-buffer overflow. [HIGH]
 - The validated shell loads all clean user-owned pak files, initializes the
-  interpreted UI VM and sound system, and completes common initialization.
+  native UI module and sound system, and completes common initialization.
   Renderer and in-game validation have since passed on hardware; sustained-play
   validation remains outstanding. [HIGH]
 - No emulator smoke test has been run; hardware remains the authoritative
@@ -173,45 +173,63 @@ HUD text, and a stable present path without a host GL context.
 
 ### G4 — Game-code and VM integration
 
-Status: **in progress (priority 2) — hardware-confirmed in-game with bots;
-map transition not confirmed**
+Status: **in progress (priority 2) — native qagame, cgame and q3_ui
+hardware-confirmed in a bot game; map transition not confirmed**
 
-- Build qagame, cgame, and UI using the least fragile VM mode first. An
-  interpreted VM is the initial fallback if executable-memory or architecture
-  assumptions make native VM code unsafe. [MEDIUM]
+- qagame, cgame and q3_ui are native code linked into the XBE. **Done on
+  hardware** (2026-09-24, XBE md5 `eba99788...`). [HIGH]
 - Verify syscall ABI, alignment, endian assumptions, packed structures, and
   32-bit pointer-sized fields. [HIGH]
 - Keep gameplay changes separate from platform and renderer changes. [HIGH]
 
 Remaining work:
 
-- Q3DM11 map load fails: `Hunk_AllocateTempMemory` fails on 8490248 bytes
-  because the 8.1 MiB BSP is read after qagame, cgame and UI fill the hunk.
-- Confirm a map transition.
+- Q3DM11 map load still fails, now later: `Hunk_AllocateTempMemory` fails on
+  262200 bytes during the world texture registration. See G6, "Q3DM11 memory
+  budget".
+- Confirm a map-to-map transition. The q3dm0 -> menu -> q3dm11 sequence
+  reloaded all three modules correctly.
+- Hardware test of the botlib entity-vector fix (below).
 
-VM mode decision (interpreter now, JIT or native later):
+Native modules (the VM mode decision; JIT and interpreter were rejected: the
+JIT costs about 3-6x the bytecode size in RAM, the interpreter is too slow):
 
-- Current state: `-DC_ONLY` disables `id386`, so `HAVE_VM_COMPILED` is off and
-  only `vm_interpreted.c` is linked. [HIGH]
-- nxdk `malloc` (dlmalloc) gets pages with `VirtualAlloc(PAGE_READWRITE)`;
-  `PAGE_EXECUTE_READWRITE` exists in `xboxkrnl.h`. The Pentium III has no NX
-  bit, but execute-from-heap still needs a hardware test. [MEDIUM]
-- JIT (`vm_x86.c`): compiled code is about 3-6x the bytecode size, because each
-  bytecode becomes its own inline x86 sequence with `dataMask` checks. [MEDIUM]
-- JIT budget: 8 MiB resident for game, cgame and ui, plus 4 MiB transient during
-  compile. The temp buffer (`codeLength * 8`) comes from `Z_Malloc`, and the
-  zone is only 8 MiB, so raise the zone or allocate it outside. Sizes are
-  estimates; log `codeLength` to measure. [LOW]
-- JIT steps: drop `C_ONLY` for the VM, add `vm_x86.c`, fix the clang calling
-  path (`vm.c:840`), use `VirtualAlloc(PAGE_EXECUTE_READWRITE)` for `XBOX`, keep
-  `vm_game`/`vm_cgame`/`vm_ui` switchable. [MEDIUM]
-- Native (game, cgame, ui built with nxdk clang and linked into the XBE): about
-  1-2x bytecode size, no compile buffer, no `instructionPointers`, no execute
-  risk. `vm->entryPoint` in `vm.c:836` already supports it. Needs module source;
-  mods that ship their own QVMs (Team Arena, OSP, CPMA) stop working. Asset pk3
-  files (maps, textures, models, sounds) still load. [MEDIUM]
-- Ranking on 64 MiB: speed native > JIT > interpreter; RAM native > interpreter
-  > JIT; risk interpreter < native < JIT. [MEDIUM]
+- Build (`Makefile.xbox`): each module compiles to LLVM bitcode, `llvm-link`
+  merges it, and `opt -passes=internalize,globaldce` keeps only
+  `vmMain<QAG|CG|UI>` and `dllEntry<QAG|CG|UI>` global. So the three copies of
+  `q_shared`, `bg_misc` and `Com_Printf` never clash in the XBE link. [HIGH]
+- `code/sys/xbox_module.h` is force-included into every module file: entry
+  renames, one data/bss section pair per module (`#pragma clang section`), and
+  float-capable `vsnprintf`/`sscanf` from `code/sys/xbox_module_libc.c`
+  (pdclib skips `%f` in both; `g_spawn.c` origins use `sscanf("%f")`). The
+  formatter passed 158,815 host checks against musl. [HIGH]
+- `llvm-objcopy --rename-section` is not supported for COFF, and
+  `#pragma bss_seg` turns bss into file data. `#pragma clang section` keeps
+  real bss sections. [HIGH]
+- `code/sys/xbox_modules.c`: asm markers (`.data$qag0`/`2` etc.) bracket each
+  module's state. The first load keeps a `.data` snapshot; later loads restore
+  it and zero `.bss`, like a fresh QVM or DLL. The PSP port showed that q3_ui
+  breaks without this. [HIGH]
+- `vm.c` loads the built-in module when `vm_* = 0` and the game is baseq3. Mods
+  and remote pure servers still load QVMs through the interpreter. [HIGH]
+- `+set sv_pure 0` at boot: a pure server drops a client whose cp message lacks
+  the cgame/ui QVM pak references, the local listen server included. [HIGH]
+- Memory: the modules add 3.9 MiB to the XBE image (code 0.6 MiB; bss cgame
+  1446 KiB, qagame 1308 KiB, ui 543 KiB) and free the 12.5 MiB the QVMs used in
+  the hunk. The hunk went from 24 to 20 MiB, so free RAM after `Com_Init` stays
+  at 6 MiB. q3dm0 now has 12021 KiB of hunk free after the world load (3858
+  before). [HIGH]
+
+Botlib entity vectors (implemented, awaits hardware):
+
+- `be_aas_bspq3.c` `AAS_VectorForBSPEpairKey` read vectors with
+  `sscanf("%lf")`, which pdclib skips, so every BSP entity vector was 0. On
+  hardware every q3dm0 item logged "in solid ... not reachable for bots" and
+  q3dm11 camp spots logged "in solid", so bots never went for items. The Xbox
+  path now parses with `COM_Parse` and the `xbox_qcommon.c` `atof`. This bug
+  existed before the native modules. [HIGH]
+- Other engine float formatting is still broken by pdclib (for example
+  "CL_InitCGame:  seconds"); it is cosmetic in the known cases. [HIGH]
 
 Exit: a local match can load a map, spawn a player, move, fire, and complete a
 map transition.
@@ -219,10 +237,51 @@ map transition.
 ### G6 — Performance and robustness
 
 Status: **partly started (priority 4) — static BSS cut from 25.2 to 4.7 MiB;
-no benchmark map yet**
+hunk 20 MiB / zone 8 MiB with native modules; Q3DM11 budget measured; no
+benchmark map yet**
 
 - Establish memory budgets for code, maps, textures, sound, VM heaps, and
   transient renderer buffers. [MEDIUM]
+
+Q3DM11 memory budget (measured 2026-09-24; Matt will choose the approach, none
+of the options below is implemented):
+
+- Method: a 32-bit host run of the real `cm_load.c` and `xbox_nv2a_world.c` on
+  the pak0 maps, calibrated on the q3dm0 hardware line `hunk_free=12021 KiB`.
+  [HIGH for CM and world, MEDIUM for the calibrated rest]
+
+| Hunk use (20480 KiB total) | q3dm0 KiB | q3dm11 KiB |
+|---|---|---|
+| Collision map (`CM_LoadMap`) | 1035 | 2921 |
+| AAS file (bot navigation) | ~1276 | ~3704 |
+| Snapshot entities + other botlib data (calibrated) | ~3581 | ~3581 |
+| Free when the renderer starts the world | ~14588 | ~10274 |
+| World data built by `xbox_nv2a_world.c` | 2567 | 5819 |
+| BSP file held during the whole world load | 3243 | 8291 |
+| Peak need of the world load now (file + world) | 5810 | 14111 |
+
+- The world loader keeps the whole BSP in hunk temp memory until the end, so
+  q3dm11 is about 3.8 MiB short. This matches the hardware failure in the
+  middle of the world shader registration. [HIGH]
+- Option 1, lump streaming: read each lump when a step needs it and free it
+  after. The peak for q3dm11 drops to 8362 KiB (surfaces step: shaders,
+  drawverts, surfaces, drawindexes), about 1.6 MiB under the free space; about
+  4.4 MiB of hunk stays free after the load (cgame defers player models below
+  about 3.9 MiB). Cost: `FS_Seek` in a pk3 re-inflates from the file start on a
+  backward seek, and `drawindexes` is the last lump. [MEDIUM]
+- Next limit, texture pool (6 MiB fixed, 16-bit textures, 32-bit lightmaps):
+  5042 KiB were used at the q3dm11 failure with about half the world shaders
+  registered. q3dm11 has 25 lightmaps (1600 KiB) against 9 on q3dm0. A full
+  pool skips textures ("texture pool full"), it does not crash. Options:
+  16-bit lightmaps (saves about 800 KiB, some banding) or DXT1 world textures
+  (4x smaller than 16-bit, needs a load-time encoder). [MEDIUM]
+- Next limit, MD3 models (malloc, not hunk): about 0.8-1.0 MiB per player at
+  LOD0 (sarge 1041 KiB, crash 875, lucy 825, biker 823). Five players need about
+  4.5 MiB; free RAM after the q3dm0 world load was 5 MiB. Option: LOD1 player
+  models (about half the size). [MEDIUM]
+- Zone: 8 MiB, peak use unknown. The PSP port runs bots with a 5 MiB zone. One
+  `meminfo` during a bot match shows whether 2-3 MiB can move to the hunk, the
+  texture pool or the heap. [LOW]
 - Prefer batching, persistent allocations, texture reuse, and bounded scratch
   buffers; avoid per-draw heap traffic. [MEDIUM]
 - Add optional counters for frame time, draw calls, texture uploads, memory
@@ -262,7 +321,7 @@ Future work uses these gates instead of an unconditional smoke-test loop:
   hashes.
 
 Passed on hardware (V3): the engine shell, menu, MD3 models, BSP world, sky,
-cinematics, bot games and LAN networking. Outstanding: combat effects (V3), G5 packaging, G6
+cinematics, bot games, LAN networking and native game modules. Outstanding: combat effects (V3), G5 packaging, G6
 robustness and V4 acceptance. [HIGH]
 
 ## Definition of done

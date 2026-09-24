@@ -7,7 +7,8 @@
 
 #include <hal/video.h>
 
-#define XBOX_COM_HUNK_MEGS 24
+/* 20, not 24: the native modules add ~4 MiB to the XBE image but no longer use the hunk. */
+#define XBOX_COM_HUNK_MEGS 20
 #define XBOX_COM_ZONE_MEGS 8
 #define XBOX_COM_SOUND_MEGS 1
 
@@ -34,6 +35,9 @@ int main(void)
 		" +set com_soundMegs " XBOX_STRINGIFY(XBOX_COM_SOUND_MEGS)
 		/* IPv4 only, as on the PS3, PS4 and Wii U ports. */
 		" +set net_enabled 1"
+		/* Linked-in native modules; overrides archived vm_* values. A pure server
+		   drops clients without cgame/ui QVM pak refs, as on the PSP port. */
+		" +set vm_game 0 +set vm_cgame 0 +set vm_ui 0 +set sv_pure 0"
 #ifdef XBOX_DIAG_NO_CINEMATIC
 		/* DIAGNOSTIC bisection switch: any non-set command skips idlogo.RoQ. */
 		" +wait"

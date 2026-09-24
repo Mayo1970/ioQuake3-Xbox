@@ -21,19 +21,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 // vm.c -- virtual machine
 
-/*
-
-
-intermix code and data
-symbol table
-
-a dll has one imported function: VM_SystemCall
-and one exported function: Perform
-
-
-*/
+// Notes: intermix code and data; symbol table; a dll imports VM_SystemCall and exports Perform.
 
 #include "vm_local.h"
+
+#ifdef XBOX
+#include "../sys/sys_xbox.h"
+#endif
 
 
 vm_t	*currentVM = NULL;
@@ -64,11 +58,6 @@ void VM_Debug( int level ) {
 	vm_debugLevel = level;
 }
 
-/*
-==============
-VM_Init
-==============
-*/
 void VM_Init( void ) {
 	Cvar_Get( "vm_cgame", "2", CVAR_ARCHIVE );	// !@# SHIP WITH SET TO 2
 	Cvar_Get( "vm_game", "2", CVAR_ARCHIVE );	// !@# SHIP WITH SET TO 2
@@ -81,13 +70,7 @@ void VM_Init( void ) {
 }
 
 
-/*
-===============
-VM_ValueToSymbol
-
-Assumes a program counter value
-===============
-*/
+// Assumes a program counter value
 const char *VM_ValueToSymbol( vm_t *vm, int value ) {
 	vmSymbol_t	*sym;
 	static char		text[MAX_TOKEN_CHARS];
@@ -111,13 +94,7 @@ const char *VM_ValueToSymbol( vm_t *vm, int value ) {
 	return text;
 }
 
-/*
-===============
-VM_ValueToFunctionSymbol
-
-For profiling, find the symbol behind this value
-===============
-*/
+// For profiling, find the symbol behind this value
 vmSymbol_t *VM_ValueToFunctionSymbol( vm_t *vm, int value ) {
 	vmSymbol_t	*sym;
 	static vmSymbol_t	nullSym;
@@ -135,11 +112,6 @@ vmSymbol_t *VM_ValueToFunctionSymbol( vm_t *vm, int value ) {
 }
 
 
-/*
-===============
-VM_SymbolToValue
-===============
-*/
 int VM_SymbolToValue( vm_t *vm, const char *symbol ) {
 	vmSymbol_t	*sym;
 
@@ -152,11 +124,6 @@ int VM_SymbolToValue( vm_t *vm, const char *symbol ) {
 }
 
 
-/*
-=====================
-VM_SymbolForCompiledPointer
-=====================
-*/
 #if 0 // 64bit!
 const char *VM_SymbolForCompiledPointer( vm_t *vm, void *code ) {
 	int			i;
@@ -183,11 +150,6 @@ const char *VM_SymbolForCompiledPointer( vm_t *vm, void *code ) {
 
 
 
-/*
-===============
-ParseHex
-===============
-*/
 int	ParseHex( const char *text ) {
 	int		value;
 	int		c;
@@ -211,11 +173,6 @@ int	ParseHex( const char *text ) {
 	return value;
 }
 
-/*
-===============
-VM_LoadSymbols
-===============
-*/
 void VM_LoadSymbols( vm_t *vm ) {
 	union {
 		char	*c;
@@ -297,44 +254,8 @@ void VM_LoadSymbols( vm_t *vm ) {
 	FS_FreeFile( mapfile.v );
 }
 
-/*
-============
-VM_DllSyscall
-
-Dlls will call this directly
-
- rcg010206 The horror; the horror.
-
-  The syscall mechanism relies on stack manipulation to get its args.
-   This is likely due to C's inability to pass "..." parameters to
-   a function in one clean chunk. On PowerPC Linux, these parameters
-   are not necessarily passed on the stack, so while (&arg[0] == arg)
-   is true, (&arg[1] == 2nd function parameter) is not necessarily
-   accurate, as arg's value might have been stored to the stack or
-   other piece of scratch memory to give it a valid address, but the
-   next parameter might still be sitting in a register.
-
-  Quake's syscall system also assumes that the stack grows downward,
-   and that any needed types can be squeezed, safely, into a signed int.
-
-  This hack below copies all needed values for an argument to a
-   array in memory, so that Quake can get the correct values. This can
-   also be used on systems where the stack grows upwards, as the
-   presumably standard and safe stdargs.h macros are used.
-
-  As for having enough space in a signed int for your datatypes, well,
-   it might be better to wait for DOOM 3 before you start porting.  :)
-
-  The original code, while probably still inherently dangerous, seems
-   to work well enough for the platforms it already works on. Rather
-   than add the performance hit for those platforms, the original code
-   is still in use there.
-
-  For speed, we just grab 15 arguments, and don't worry about exactly
-   how many the syscall actually needs; the extra is thrown away.
- 
-============
-*/
+// Dlls call this directly. rcg010206: &arg[1] is not the 2nd arg where varargs sit in registers,
+// so stdarg copies a fixed MAX_VMSYSCALL_ARGS into an array; unused extras are ignored.
 intptr_t QDECL VM_DllSyscall( intptr_t arg, ... ) {
 #if !id386 || defined __clang__
   // rcg010206 - see commentary above
@@ -356,13 +277,7 @@ intptr_t QDECL VM_DllSyscall( intptr_t arg, ... ) {
 }
 
 
-/*
-=================
-VM_LoadQVM
-
-Load a .qvm file
-=================
-*/
+// Load a .qvm file
 vmHeader_t *VM_LoadQVM( vm_t *vm, qboolean alloc, qboolean unpure)
 {
 	int					dataLength;
@@ -521,17 +436,8 @@ vmHeader_t *VM_LoadQVM( vm_t *vm, qboolean alloc, qboolean unpure)
 	return header.h;
 }
 
-/*
-=================
-VM_Restart
-
-Reload the data, but leave everything else in place
-This allows a server to do a map_restart without changing memory allocation
-
-We need to make sure that servers can access unpure QVMs (not contained in any pak)
-even if the client is pure, so take "unpure" as argument.
-=================
-*/
+// Reload the data but leave everything else in place, so map_restart keeps its memory allocation.
+// Takes "unpure" so servers can access unpure QVMs (not in any pak) even if the client is pure.
 vm_t *VM_Restart(vm_t *vm, qboolean unpure)
 {
 	vmHeader_t	*header;
@@ -565,14 +471,7 @@ vm_t *VM_Restart(vm_t *vm, qboolean unpure)
 	return vm;
 }
 
-/*
-================
-VM_Create
-
-If image ends in .qvm it will be interpreted, otherwise
-it will attempt to load as a system dll
-================
-*/
+// If image ends in .qvm it will be interpreted, otherwise it will attempt to load as a system dll
 vm_t *VM_Create( const char *module, intptr_t (*systemCalls)(intptr_t *), 
 				vmInterpret_t interpret ) {
 	vm_t		*vm;
@@ -609,6 +508,22 @@ vm_t *VM_Create( const char *module, intptr_t (*systemCalls)(intptr_t *),
 	vm = &vmTable[i];
 
 	Q_strncpyz(vm->name, module, sizeof(vm->name));
+
+#ifdef XBOX
+	// The baseq3 modules are linked into the XBE (sys/xbox_modules.c).
+	if(interpret == VMI_NATIVE && Sys_XboxUseBuiltinModule(module))
+	{
+		vm->dllHandle = Sys_LoadGameDll(module, &vm->entryPoint, VM_DllSyscall);
+
+		if(vm->dllHandle)
+		{
+			vm->systemCall = systemCalls;
+			return vm;
+		}
+
+		Com_Printf("Failed loading built-in %s, trying the QVM\n", module);
+	}
+#endif
 
 	do
 	{
@@ -686,11 +601,6 @@ vm_t *VM_Create( const char *module, intptr_t (*systemCalls)(intptr_t *),
 	return vm;
 }
 
-/*
-==============
-VM_Free
-==============
-*/
 void VM_Free( vm_t *vm ) {
 
 	if(!vm) {
@@ -780,30 +690,8 @@ void *VM_ExplicitArgPtr( vm_t *vm, intptr_t intValue ) {
 }
 
 
-/*
-==============
-VM_Call
-
-
-Upon a system call, the stack will look like:
-
-sp+32	parm1
-sp+28	parm0
-sp+24	return value
-sp+20	return address
-sp+16	local1
-sp+14	local0
-sp+12	arg1
-sp+8	arg0
-sp+4	return stack
-sp		return address
-
-An interpreted function will immediately execute
-an OP_ENTER instruction, which will subtract space for
-locals from sp
-==============
-*/
-
+// On a system call the stack holds, from sp up: return address, return stack, arg0, arg1, local0,
+// local1, return address, return value, parm0, parm1; OP_ENTER then subtracts the locals from sp.
 intptr_t QDECL VM_Call( vm_t *vm, int callnum, ... )
 {
 	vm_t	*oldVM;
@@ -889,12 +777,6 @@ static int QDECL VM_ProfileSort( const void *a, const void *b ) {
 	return 0;
 }
 
-/*
-==============
-VM_VmProfile_f
-
-==============
-*/
 void VM_VmProfile_f( void ) {
 	vm_t		*vm;
 	vmSymbol_t	**sorted, *sym;
@@ -936,12 +818,6 @@ void VM_VmProfile_f( void ) {
 	Z_Free( sorted );
 }
 
-/*
-==============
-VM_VmInfo_f
-
-==============
-*/
 void VM_VmInfo_f( void ) {
 	vm_t	*vm;
 	int		i;
@@ -968,13 +844,7 @@ void VM_VmInfo_f( void ) {
 	}
 }
 
-/*
-===============
-VM_LogSyscalls
-
-Insert calls to this while debugging the vm compiler
-===============
-*/
+// Insert calls to this while debugging the vm compiler
 void VM_LogSyscalls( int *args ) {
 	static	int		callnum;
 	static	FILE	*f;
@@ -987,13 +857,7 @@ void VM_LogSyscalls( int *args ) {
 		args[0], args[1], args[2], args[3], args[4] );
 }
 
-/*
-=================
-VM_BlockCopy
-Executes a block copy operation within currentVM data space
-=================
-*/
-
+// Executes a block copy operation within currentVM data space
 void VM_BlockCopy(unsigned int dest, unsigned int src, size_t n)
 {
 	unsigned int dataMask = currentVM->dataMask;
