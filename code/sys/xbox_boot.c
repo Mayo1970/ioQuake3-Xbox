@@ -13,8 +13,6 @@
 
 #define XBOX_STRINGIFY_VALUE(value) #value
 #define XBOX_STRINGIFY(value) XBOX_STRINGIFY_VALUE(value)
-/* DIAGNOSTIC: per-frame connection lines stop here so a stall cannot flood the log. */
-#define XBOX_DIAG_CONNECT_LINES 300
 
 /* DIAGNOSTIC: both netchan ends of the map-load connection; remove after. */
 static void XboxLogConnect(const char *tag)
@@ -30,17 +28,12 @@ static void XboxLogConnect(const char *tag)
 
 int main(void)
 {
-	connstate_t lastState = CA_UNINITIALIZED;
-	int lastBeat = 0;
-	int connectLines = 0;
 	char commandLine[] =
 		"+set com_hunkMegs " XBOX_STRINGIFY(XBOX_COM_HUNK_MEGS)
 		" +set com_zoneMegs " XBOX_STRINGIFY(XBOX_COM_ZONE_MEGS)
 		" +set com_soundMegs " XBOX_STRINGIFY(XBOX_COM_SOUND_MEGS)
 		/* IPv4 only, as on the PS3, PS4 and Wii U ports. */
 		" +set net_enabled 1"
-		/* DIAGNOSTIC: ioq3's own netchan fragment and server-message trace; remove after. */
-		" +set showpackets 1 +set cl_shownet 2"
 #ifdef XBOX_DIAG_NO_CINEMATIC
 		/* DIAGNOSTIC bisection switch: any non-set command skips idlogo.RoQ. */
 		" +wait"
@@ -74,21 +67,6 @@ int main(void)
 	{
 		Com_Frame();
 		Sys_XboxDiagFrame();
-		/* DIAGNOSTIC: client connection state per frame, to locate map-load stalls; remove after. */
-		if (clc.state != lastState)
-		{
-			Sys_XboxLog("Xbox client: state %d -> %d\n", (int)lastState, (int)clc.state);
-			lastState = clc.state;
-		}
-		/* DIAGNOSTIC: every frame once connected, else once a second; lines stop on a hang. */
-		if (clc.state >= CA_CONNECTING && clc.state < CA_ACTIVE &&
-			connectLines < XBOX_DIAG_CONNECT_LINES &&
-			(clc.state >= CA_CONNECTED || Sys_Milliseconds() - lastBeat >= 1000))
-		{
-			lastBeat = Sys_Milliseconds();
-			connectLines++;
-			XboxLogConnect("connect");
-		}
 		if (Sys_XboxExitRequested())
 		{
 			IN_Shutdown();

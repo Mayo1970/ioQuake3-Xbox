@@ -105,6 +105,7 @@ NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DIOQUAKE3_XBOX_SHELL -DBOTLIB -DC_ONLY -O
 	-I/usr/src/nxdk/lib/net/lwip/src/include \
 	-I/usr/src/nxdk/lib/net/lwip/src/include/compat/posix
 NXDK_NET = y
+NXDK_USB_ENABLE_HID = y
 SHADER_OBJS = \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a_vp.inl \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a_fp.inl

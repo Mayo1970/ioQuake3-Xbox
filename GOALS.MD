@@ -90,6 +90,39 @@ Status: **complete**
 Exit: the nxdk container produces a valid XBE and links the platform shell.
 The build-side and hardware exits are complete. [HIGH]
 
+### G2 — Platform services
+
+Status: **complete**
+
+- `Sys_*`: timing, sleep, exit/error handling, paths, directory enumeration and
+  conservative memory reporting live in `code/sys/sys_xbox.c`. **Done.** [HIGH]
+- Filesystem: the clean user-owned pak set loads from `D:\baseq3\` with
+  preserved pak semantics, including zlib decompression under nxdk's `Z_SOLO`
+  build. Home path uses E: when available and falls back to `D:\baseq3`. **Done.**
+  [HIGH]
+- Input: nxdk's native XID USB driver, all four controller slots, analog face
+  buttons/triggers, sticks, hot-plug callbacks and disconnect clearing. State
+  goes through the `IN_*` boundary into `SE_KEY` and `SE_JOYSTICK_AXIS` events.
+  **Done on hardware.** [HIGH]
+- Keyboard and mouse: nxdk HID support is enabled (`NXDK_USB_ENABLE_HID`,
+  libusbohci `src_hid`). Boot keyboards map key and modifier transitions to
+  `SE_KEY` and printable input to `SE_CHAR`. Mice read their HID report
+  descriptor and decode buttons 1-5, X, Y and wheel from it in report protocol,
+  which covers report IDs and 12/16-bit axes. Without a usable descriptor, a
+  mouse falls back to boot protocol. Hot-plug disconnects release held keys and
+  buttons. Backspace in text fields sends ctrl-h `SE_CHAR`, as in
+  `sdl_input.c`. **Done on hardware** (XBE md5 `16031d7a...`). [HIGH]
+- Sound: native AC97 PCM service with contiguous DMA buffer allocation, a
+  refill callback, silence fallback and pause/shutdown control. **Done.** [HIGH]
+- Networking: UDP/IPv4 over nxdk lwIP (`code/sys/xbox_net.c`), started with the
+  dashboard settings before `Com_Init`, as on the PS3/PS4/Wii U ports. When DHCP
+  times out, it falls back to link-local 169.254/16 for System Link. LAN play
+  **done on hardware** (XBE md5 `5c5041e3...`). [HIGH]
+
+Exit: the executable reaches the running qcommon/client engine shell without
+SDL, desktop OpenGL, or proprietary XDK dependencies, with the native services
+connected to the full qcommon/client boundary. Met. [HIGH]
+
 ### G3 — Native NV2A renderer bring-up
 
 Status: **in progress (priority 1) — hardware-confirmed for menu, MD3 models,
@@ -182,34 +215,6 @@ VM mode decision (interpreter now, JIT or native later):
 
 Exit: a local match can load a map, spawn a player, move, fire, and complete a
 map transition.
-
-### G2 — Platform services
-
-Status: **in progress (priority 3) — all services validated except keyboard and mouse**
-
-- `Sys_*`: timing, sleep, exit/error handling, paths, directory enumeration and
-  conservative memory reporting live in `code/sys/sys_xbox.c`. **Done.** [HIGH]
-- Filesystem: the clean user-owned pak set loads from `D:\baseq3\` with
-  preserved pak semantics, including zlib decompression under nxdk's `Z_SOLO`
-  build. Home path uses E: when available and falls back to `D:\baseq3`. **Done.**
-  [HIGH]
-- Input: nxdk's native XID USB driver, all four controller slots, analog face
-  buttons/triggers, sticks, hot-plug callbacks and disconnect clearing. State
-  goes through the `IN_*` boundary into `SE_KEY` and `SE_JOYSTICK_AXIS` events.
-  **Done on hardware.** [HIGH]
-- Keyboard and mouse: **not started.** Enable the nxdk HID class driver
-  (`NXDK_USB_ENABLE_HID`, libusbohci `src_hid`) and map its reports to `SE_KEY`
-  and `SE_MOUSE` events. Needs a USB-to-controller-port adapter. [MEDIUM]
-- Sound: native AC97 PCM service with contiguous DMA buffer allocation, a
-  refill callback, silence fallback and pause/shutdown control. **Done.** [HIGH]
-- Networking: UDP/IPv4 over nxdk lwIP (`code/sys/xbox_net.c`), started with the
-  dashboard settings before `Com_Init`, as on the PS3/PS4/Wii U ports. When DHCP
-  times out, it falls back to link-local 169.254/16 for System Link. LAN play
-  **done on hardware** (XBE md5 `5c5041e3...`). [HIGH]
-
-Exit: the executable reaches the running qcommon/client engine shell without
-SDL, desktop OpenGL, or proprietary XDK dependencies, with the native services
-connected to the full qcommon/client boundary. Met. [HIGH]
 
 ### G6 — Performance and robustness
 
