@@ -1,7 +1,6 @@
-/work/code/renderernv2a/xbox_nv2a.obj: \
-  /work/code/renderernv2a/xbox_nv2a.c \
-  /work/code/renderernv2a/xbox_nv2a.h \
-  /work/code/renderernv2a/../qcommon/q_shared.h \
+/src/code/renderernv2a/xbox_nv2a.obj: /src/code/renderernv2a/xbox_nv2a.c \
+  /src/code/renderernv2a/xbox_nv2a.h \
+  /src/code/renderernv2a/../qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
@@ -26,16 +25,16 @@
   /usr/src/nxdk/lib/pdclib/include/time.h \
   /usr/src/nxdk/lib/pdclib/include/ctype.h \
   /usr/src/nxdk/lib/pdclib/include/limits.h \
-  /work/code/renderernv2a/../qcommon/q_platform.h \
-  /work/code/renderernv2a/../qcommon/surfaceflags.h \
-  /work/code/renderernv2a/../qcommon/qfiles.h \
-  /work/code/renderernv2a/../renderercommon/tr_public.h \
-  /work/code/renderernv2a/../renderercommon/tr_types.h \
-  /work/code/renderernv2a/../qcommon/qcommon.h \
-  /work/code/renderernv2a/../qcommon/../qcommon/cm_public.h \
-  /work/code/renderernv2a/../qcommon/../qcommon/qfiles.h \
-  /work/code/renderernv2a/../sys/sys_xbox.h \
-  /usr/src/nxdk/lib/hal/video.h /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h \
+  /src/code/renderernv2a/../qcommon/q_platform.h \
+  /src/code/renderernv2a/../qcommon/surfaceflags.h \
+  /src/code/renderernv2a/../qcommon/qfiles.h \
+  /src/code/renderernv2a/../renderercommon/tr_public.h \
+  /src/code/renderernv2a/../renderercommon/tr_types.h \
+  /src/code/renderernv2a/../qcommon/qcommon.h \
+  /src/code/renderernv2a/../qcommon/../qcommon/cm_public.h \
+  /src/code/renderernv2a/../qcommon/../qcommon/qfiles.h \
+  /src/code/renderernv2a/../sys/sys_xbox.h /usr/src/nxdk/lib/hal/video.h \
+  /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h \
   /usr/src/nxdk/lib/xboxkrnl/xboxdef.h \
   /usr/src/nxdk/lib/xboxkrnl/ntstatus.h \
   /usr/src/nxdk/lib/winapi/windows.h /usr/src/nxdk/lib/winapi/debugapi.h \
@@ -55,7 +54,7 @@
   /usr/src/nxdk/lib/winapi/sysinfoapi.h \
   /usr/src/nxdk/lib/winapi/timezoneapi.h \
   /usr/src/nxdk/lib/winapi/winerror.h \
-  /work/code/renderernv2a/../thirdparty/xgu/xgu.h \
+  /src/code/renderernv2a/../thirdparty/xgu/xgu.h \
   /usr/src/nxdk/lib/pbkit/pbkit.h \
   /usr/src/nxdk/lib/pdclib/include/stdbool.h \
   /usr/src/nxdk/lib/pbkit/outer.h /usr/src/nxdk/lib/pbkit/nv_objects.h \
@@ -66,12 +65,12 @@
   /usr/src/nxdk/lib/pbkit/pbkit_framebuffer.h \
   /usr/src/nxdk/lib/pbkit/pbkit_print.h \
   /usr/src/nxdk/lib/pbkit/pbkit_pushbuffer.h \
-  /work/code/renderernv2a/../thirdparty/xgu/nv2a_regs.h \
-  /work/code/renderernv2a/../thirdparty/xgu/xgux.h \
-  /work/code/renderernv2a/xbox_nv2a_vp.inl \
-  /work/code/renderernv2a/xbox_nv2a_fp.inl
-/work/code/renderernv2a/xbox_nv2a.h:
-/work/code/renderernv2a/../qcommon/q_shared.h:
+  /src/code/renderernv2a/../thirdparty/xgu/nv2a_regs.h \
+  /src/code/renderernv2a/../thirdparty/xgu/xgux.h \
+  /src/code/renderernv2a/xbox_nv2a_vp.inl \
+  /src/code/renderernv2a/xbox_nv2a_fp.inl
+/src/code/renderernv2a/xbox_nv2a.h:
+/src/code/renderernv2a/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
@@ -96,15 +95,15 @@
 /usr/src/nxdk/lib/pdclib/include/time.h:
 /usr/src/nxdk/lib/pdclib/include/ctype.h:
 /usr/src/nxdk/lib/pdclib/include/limits.h:
-/work/code/renderernv2a/../qcommon/q_platform.h:
-/work/code/renderernv2a/../qcommon/surfaceflags.h:
-/work/code/renderernv2a/../qcommon/qfiles.h:
-/work/code/renderernv2a/../renderercommon/tr_public.h:
-/work/code/renderernv2a/../renderercommon/tr_types.h:
-/work/code/renderernv2a/../qcommon/qcommon.h:
-/work/code/renderernv2a/../qcommon/../qcommon/cm_public.h:
-/work/code/renderernv2a/../qcommon/../qcommon/qfiles.h:
-/work/code/renderernv2a/../sys/sys_xbox.h:
+/src/code/renderernv2a/../qcommon/q_platform.h:
+/src/code/renderernv2a/../qcommon/surfaceflags.h:
+/src/code/renderernv2a/../qcommon/qfiles.h:
+/src/code/renderernv2a/../renderercommon/tr_public.h:
+/src/code/renderernv2a/../renderercommon/tr_types.h:
+/src/code/renderernv2a/../qcommon/qcommon.h:
+/src/code/renderernv2a/../qcommon/../qcommon/cm_public.h:
+/src/code/renderernv2a/../qcommon/../qcommon/qfiles.h:
+/src/code/renderernv2a/../sys/sys_xbox.h:
 /usr/src/nxdk/lib/hal/video.h:
 /usr/src/nxdk/lib/xboxkrnl/xboxkrnl.h:
 /usr/src/nxdk/lib/xboxkrnl/xboxdef.h:
@@ -129,7 +128,7 @@
 /usr/src/nxdk/lib/winapi/sysinfoapi.h:
 /usr/src/nxdk/lib/winapi/timezoneapi.h:
 /usr/src/nxdk/lib/winapi/winerror.h:
-/work/code/renderernv2a/../thirdparty/xgu/xgu.h:
+/src/code/renderernv2a/../thirdparty/xgu/xgu.h:
 /usr/src/nxdk/lib/pbkit/pbkit.h:
 /usr/src/nxdk/lib/pdclib/include/stdbool.h:
 /usr/src/nxdk/lib/pbkit/outer.h:
@@ -141,7 +140,7 @@
 /usr/src/nxdk/lib/pbkit/pbkit_framebuffer.h:
 /usr/src/nxdk/lib/pbkit/pbkit_print.h:
 /usr/src/nxdk/lib/pbkit/pbkit_pushbuffer.h:
-/work/code/renderernv2a/../thirdparty/xgu/nv2a_regs.h:
-/work/code/renderernv2a/../thirdparty/xgu/xgux.h:
-/work/code/renderernv2a/xbox_nv2a_vp.inl:
-/work/code/renderernv2a/xbox_nv2a_fp.inl:
+/src/code/renderernv2a/../thirdparty/xgu/nv2a_regs.h:
+/src/code/renderernv2a/../thirdparty/xgu/xgux.h:
+/src/code/renderernv2a/xbox_nv2a_vp.inl:
+/src/code/renderernv2a/xbox_nv2a_fp.inl:

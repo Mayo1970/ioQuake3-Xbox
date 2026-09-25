@@ -16,6 +16,13 @@ void Sys_XboxSleep(unsigned int milliseconds);
 void Sys_XboxRequestExit(void);
 int Sys_XboxExitRequested(void);
 
+/* DIAGNOSTIC: SV_Frame sum and longest call in performance counter ticks, and S_memoryLoad calls
+   (in game these are sounds reloaded after eviction); the renderer perf line reads and clears them. */
+extern int64_t xboxServerFrameTicks;
+extern int64_t xboxServerFrameMaxTicks;
+extern unsigned int xboxSoundLoads;
+int64_t Sys_XboxTicks(void);
+
 /* Platform paths deliberately keep content and mutable state separate. */
 const char *Sys_XboxBasePath(void);
 const char *Sys_XboxHomePath(void);

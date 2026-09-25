@@ -32,6 +32,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "snd_local.h"
 #include "snd_codec.h"
 #include "client.h"
+#ifdef XBOX
+#include "../sys/sys_xbox.h"
+#endif
 
 void S_Update_( void );
 void S_Base_StopAllSounds(void);
@@ -353,7 +356,13 @@ Creates a default buzz sound if the file can't be loaded
 sfxHandle_t	S_Base_RegisterSound( const char *name, qboolean compressed ) {
 	sfx_t	*sfx;
 
+#ifdef XBOX
+	/* 16-bit sounds overflow com_soundMegs 1 on Q3DM11 and reload in play;
+	   ADPCM stores mono sounds at 4 bits per sample. */
+	compressed = qtrue;
+#else
 	compressed = qfalse;
+#endif
 	if (!s_soundStarted) {
 		return 0;
 	}
@@ -404,6 +413,9 @@ void S_Base_BeginRegistration( void ) {
 }
 
 void S_memoryLoad(sfx_t	*sfx) {
+#ifdef XBOX
+	xboxSoundLoads++;
+#endif
 	// load the sound file
 	if ( !S_LoadSound ( sfx ) ) {
 //		Com_Printf( S_COLOR_YELLOW "WARNING: couldn't load sound: %s\n", sfx->soundName );

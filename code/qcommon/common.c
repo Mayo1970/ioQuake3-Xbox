@@ -2638,6 +2638,8 @@ void Com_Frame( void ) {
 	int		xboxDiagFrame = 0;
 	int		xboxWaitPass = 0;
 	qboolean	xboxTraceFrame = qfalse;
+	int64_t		xboxServerStart;
+	int64_t		xboxServerTicks;
 	static qboolean xboxDiagActive = qfalse;
 	static int xboxDiagFrames = 0;
 #endif
@@ -2793,9 +2795,14 @@ void Com_Frame( void ) {
 #ifdef XBOX
 	if (xboxTraceFrame)
 		Sys_XboxLog("Xbox frame trace %d: SV_Frame begin msec=%d\n", xboxDiagFrame, msec);
+	xboxServerStart = Sys_XboxTicks();
 #endif
 	SV_Frame( msec );
 #ifdef XBOX
+	xboxServerTicks = Sys_XboxTicks() - xboxServerStart;
+	xboxServerFrameTicks += xboxServerTicks;
+	if (xboxServerTicks > xboxServerFrameMaxTicks)
+		xboxServerFrameMaxTicks = xboxServerTicks;
 	if (xboxTraceFrame)
 		Sys_XboxLog("Xbox frame trace %d: SV_Frame end\n", xboxDiagFrame);
 #endif

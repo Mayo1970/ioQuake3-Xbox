@@ -122,6 +122,18 @@ int Sys_Milliseconds(void)
 	return now - xboxTimeBase;
 }
 
+int64_t xboxServerFrameTicks;
+int64_t xboxServerFrameMaxTicks;
+unsigned int xboxSoundLoads;
+
+int64_t Sys_XboxTicks(void)
+{
+	LARGE_INTEGER now;
+
+	QueryPerformanceCounter(&now);
+	return now.QuadPart;
+}
+
 qboolean Sys_RandomBytes(byte *string, int len)
 {
 	(void)string;

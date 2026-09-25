@@ -218,6 +218,7 @@ qboolean S_LoadSound( sfx_t *sfx )
 {
 	byte	*data;
 	short	*samples;
+	int		outSamples;
 	snd_info_t	info;
 //	int		size;
 
@@ -234,7 +235,9 @@ qboolean S_LoadSound( sfx_t *sfx )
 		Com_DPrintf(S_COLOR_YELLOW "WARNING: %s is not a 22kHz audio file\n", sfx->soundName);
 	}
 
-	samples = Hunk_AllocateTempMemory(info.channels * info.samples * sizeof(short) * 2);
+	// ResampleSfxRaw writes samples * dma.speed / rate; 11 kHz sounds at 24 kHz need more than 2x
+	outSamples = (int)((float)info.samples * dma.speed / info.rate) + 1;
+	samples = Hunk_AllocateTempMemory(info.channels * MAX(info.samples * 2, outSamples) * sizeof(short));
 
 	sfx->lastTimeUsed = Com_Milliseconds()+1;
 

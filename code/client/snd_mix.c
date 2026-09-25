@@ -440,7 +440,8 @@ void S_PaintChannelFromADPCM( channel_t *ch, sfx_t *sc, int count, int sampleOff
 		samp[i].left += (data * leftvol)>>8;
 		samp[i].right += (data * rightvol)>>8;
 
-		if (sampleOffset == SND_CHUNK_SIZE*4) {
+		// the last chunk has no next; only decode it when more samples follow
+		if (sampleOffset == SND_CHUNK_SIZE*4 && i + 1 < count) {
 			chunk = chunk->next;
 			S_AdpcmGetSamples( chunk, sfxScratchBuffer);
 			sampleOffset = 0;

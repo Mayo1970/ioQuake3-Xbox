@@ -327,6 +327,8 @@ static unsigned int XboxNV2ASwizzledOffset(unsigned int x, unsigned int y,
 #define XBOX_NV2A_TRACE_SCENES 16
 #define XBOX_NV2A_HEARTBEAT_FRAMES 600
 #define XBOX_NV2A_GPU_TIMEOUT_MS 2000
+/* DIAGNOSTIC: the perf line counts frames longer than this (30 fps). */
+#define XBOX_NV2A_SLOW_FRAME_MS 33
 static unsigned int xboxNV2AFrameCount;
 static unsigned int xboxNV2ASceneCount;
 static int xboxNV2ALastSceneSignature = -1;
@@ -348,7 +350,9 @@ typedef struct {
 	unsigned int indexes;
 	unsigned int streamWraps;
 	unsigned int pushResets;
+	unsigned int slowFrames;
 	LONGLONG frameTicks;
+	LONGLONG maxFrameTicks;
 	LONGLONG sceneTicks;
 	LONGLONG vblankTicks;
 	LONGLONG endWaitTicks;
@@ -385,18 +389,27 @@ static void XboxNV2ALogPerf(void)
 {
 	XboxNV2APerfCounters *c = &xboxNV2APerf;
 	LARGE_INTEGER frequency;
+	double tickUs;
 	double us;
 	unsigned int frames = c->frames ? c->frames : 1;
 
 	QueryPerformanceFrequency(&frequency);
-	us = 1000000.0 / ((double)frequency.QuadPart * frames);
+	tickUs = 1000000.0 / (double)frequency.QuadPart;
+	us = tickUs / frames;
 	Sys_XboxLog("Xbox perf: %u frames, per frame us: total=%u scene=%u gpuwait=%u vblank=%u "
-		"midwait=%u; per frame: draws=%u verts=%u fastverts=%u indexes=%u; wraps=%u "
+		"midwait=%u server=%u; max frame us=%u max server us=%u; frames over %u ms=%u; "
+		"sound loads=%u; per frame: draws=%u verts=%u fastverts=%u indexes=%u; wraps=%u "
 		"pushresets=%u\n",
 		c->frames, (unsigned int)(c->frameTicks * us), (unsigned int)(c->sceneTicks * us),
 		(unsigned int)(c->endWaitTicks * us), (unsigned int)(c->vblankTicks * us),
-		(unsigned int)(c->midWaitTicks * us), c->draws / frames, c->verts / frames,
+		(unsigned int)(c->midWaitTicks * us), (unsigned int)(xboxServerFrameTicks * us),
+		(unsigned int)(c->maxFrameTicks * tickUs),
+		(unsigned int)(xboxServerFrameMaxTicks * tickUs), XBOX_NV2A_SLOW_FRAME_MS,
+		c->slowFrames, xboxSoundLoads, c->draws / frames, c->verts / frames,
 		c->fastVerts / frames, c->indexes / frames, c->streamWraps, c->pushResets);
+	xboxServerFrameTicks = 0;
+	xboxServerFrameMaxTicks = 0;
+	xboxSoundLoads = 0;
 	{
 		LONGLONG lastBegin = c->lastBegin;
 
@@ -2429,8 +2442,16 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 		XboxNV2ALogPerf();
 	now = XboxNV2ATicks();
 	if (xboxNV2APerf.lastBegin) {
-		xboxNV2APerf.frameTicks += now - xboxNV2APerf.lastBegin;
+		LONGLONG frameTicks = now - xboxNV2APerf.lastBegin;
+		LARGE_INTEGER frequency;
+
+		QueryPerformanceFrequency(&frequency);
+		xboxNV2APerf.frameTicks += frameTicks;
 		xboxNV2APerf.frames++;
+		if (frameTicks > xboxNV2APerf.maxFrameTicks)
+			xboxNV2APerf.maxFrameTicks = frameTicks;
+		if (frameTicks * 1000 > frequency.QuadPart * XBOX_NV2A_SLOW_FRAME_MS)
+			xboxNV2APerf.slowFrames++;
 	}
 	xboxNV2APerf.lastBegin = now;
 	/* pbkit rotates 3 buffers; this frame's one leaves the screen with the flip queued two frames ago. */

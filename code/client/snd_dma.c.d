@@ -35,7 +35,8 @@
   /src/code/client/../renderercommon/tr_types.h \
   /src/code/client/../ui/ui_public.h /src/code/client/keys.h \
   /src/code/client/keycodes.h /src/code/client/../cgame/cg_public.h \
-  /src/code/client/../game/bg_public.h
+  /src/code/client/../game/bg_public.h \
+  /src/code/client/../sys/sys_xbox.h
 /src/code/client/snd_local.h:
 /src/code/client/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
@@ -77,3 +78,4 @@
 /src/code/client/keycodes.h:
 /src/code/client/../cgame/cg_public.h:
 /src/code/client/../game/bg_public.h:
+/src/code/client/../sys/sys_xbox.h:

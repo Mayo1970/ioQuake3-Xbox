@@ -10,6 +10,7 @@
 /* 20, not 24: the native modules add ~4 MiB to the XBE image but no longer use the hunk. */
 #define XBOX_COM_HUNK_MEGS 20
 #define XBOX_COM_ZONE_MEGS 8
+/* 1536 sound chunks (~3 MiB); 2 ran out of memory on Q3DM11, so snd_dma.c stores mono sounds as ADPCM. */
 #define XBOX_COM_SOUND_MEGS 1
 
 #define XBOX_STRINGIFY_VALUE(value) #value
