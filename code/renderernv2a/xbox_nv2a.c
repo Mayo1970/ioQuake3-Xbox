@@ -156,6 +156,9 @@ typedef struct {
 /* Release pbkit does not check for overflow; restart well below its 512 KiB limit. */
 #define XBOX_NV2A_PUSH_LIMIT_DWORDS (96u * 1024u)
 #define XBOX_NV2A_STATE_DWORDS 64u
+/* CRTC scanout address; pbkit's ISR writes it with the buffer's address & 0x03FFFFFF. */
+#define XBOX_NV2A_PCRTC_START 0x00600800
+#define XBOX_NV2A_PHYSICAL_MASK 0x03FFFFFFu
 /* NV097_SET_TEXTURE_FILTER min/mag: TENT_LOD0 is GL_LINEAR, TENT_NEARESTLOD ioq3's default
    GL_LINEAR_MIPMAP_NEAREST; the LOD clamps are 4.8 fixed point. */
 #define XBOX_NV2A_FILTER_LINEAR 2
@@ -2501,6 +2504,19 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 	} else if (xboxNV2AFlipsQueued >= 2) {
 		while ((int)(pb_get_vbl_counter() - xboxNV2AFlipShow[0]) < 0)
 			pb_wait_for_vbl();
+	}
+	/* pbkit's DPC drops a queued flip when a vblank lands while its ISR has interrupts off, */
+	/* so the count can pass while this buffer is still on screen; the next flip is queued. */
+	{
+		DWORD backAddr = (DWORD)pb_back_buffer() & XBOX_NV2A_PHYSICAL_MASK;
+		DWORD start = GetTickCount();
+
+		while ((VIDEOREG(XBOX_NV2A_PCRTC_START) & XBOX_NV2A_PHYSICAL_MASK) == backAddr) {
+			if (GetTickCount() - start > XBOX_NV2A_GPU_TIMEOUT_MS)
+				Sys_Error("Xbox NV2A: back buffer stays on screen, frame %u",
+					xboxNV2AFrameCount);
+			pb_wait_for_vbl();
+		}
 	}
 	xboxNV2APerf.vblankTicks += XboxNV2ATicks() - now;
 	pb_reset();
