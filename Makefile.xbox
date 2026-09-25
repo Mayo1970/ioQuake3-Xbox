@@ -161,6 +161,16 @@ NXDK_DIR ?= /usr/src/nxdk
 
 include $(NXDK_DIR)/Makefile
 
+# cxbe cannot write $$XTIMAGE (dashboard icon) or clear the 64 MB flag; patch both after every link.
+$(OUTPUT_DIR)/.xbe_icon: $(OUTPUT_DIR)/default.xbe $(CURDIR)/icons/TitleImage.xbx \
+	$(CURDIR)/tools/xbe_add_icon.py $(CURDIR)/tools/xbe_clear_limit64.py
+	@echo "[ ICON     ] $(OUTPUT_DIR)/default.xbe"
+	$(VE)python3 $(CURDIR)/tools/xbe_add_icon.py $(OUTPUT_DIR)/default.xbe \
+		$(CURDIR)/icons/TitleImage.xbx
+	$(VE)python3 $(CURDIR)/tools/xbe_clear_limit64.py $(OUTPUT_DIR)/default.xbe
+	@touch $@
+all: $(OUTPUT_DIR)/.xbe_icon
+
 # Hot per-vertex code only; the rest and the game modules stay -O2 without fast-math.
 # Flags are not tracked, so delete these objects after changing them.
 XBOX_FAST_MATH_OBJS = $(patsubst %.c,%.obj, \

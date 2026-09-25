@@ -305,6 +305,24 @@ Status: **not started (priority 5)**
 Exit: a clean package can be assembled from a fresh build and separately staged
 game data without manual source-tree edits.
 
+### G7 — Default player name from the console
+
+Status: **not started** (parked by Matt for later)
+
+- Goal: the `name` cvar defaults to the console's identity instead of
+  `UnnamedPlayer`, as on the PS3 and PS4 ports. Feed it into the `Cvar_Get`
+  default at `code/client/cl_main.c`, not a later `Cvar_Set`, so the setup menu
+  Defaults button (`cvar_restart`) keeps it. Resolve the name before `Com_Init`.
+- Source order: Xbox Live account name first, then the dashboard or softmod name.
+- Xbox Live account: believed to be in `C:\XONLINES.XBX`, probably encrypted with
+  an EEPROM-derived key (kernel `Xc*` crypto exports). Record layout unverified.
+  [LOW]
+- Dashboard or softmod name: location depends on the dashboard (UnleashX, XBMC,
+  other). Ask Matt which dashboard holds his name. [LOW]
+- Plan: (1) debug-only diagnostic that logs the size and header of
+  `C:\XONLINES.XBX`; (2) Matt runs it on hardware and sends the log; (3) write the
+  real parser; (4) add the dashboard fallback; (5) wire the default.
+
 ## Validation gates
 
 Future work uses these gates instead of an unconditional smoke-test loop:

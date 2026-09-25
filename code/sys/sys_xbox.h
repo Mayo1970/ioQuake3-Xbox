@@ -9,6 +9,7 @@
 void Sys_XboxLogOpen(void);
 void Sys_XboxLog(const char *format, ...);
 void Sys_XboxMemoryReport(const char *stage);
+unsigned int Sys_XboxPhysicalMegs(void);
 void Sys_XboxServerTrace(char *buffer, int size);
 void Sys_XboxDiagFrame(void);
 void Sys_XboxStartWatchdog(void (*report)(const char *tag));

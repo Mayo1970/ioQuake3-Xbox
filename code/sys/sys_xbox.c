@@ -107,6 +107,18 @@ void Sys_XboxMemoryReport(const char *stage)
 		(unsigned int)((statistics.StackPagesCommitted * 4U) / 1024U));
 }
 
+/* 0 if the query fails. A 128 MB unit also needs a 128 MB BIOS and the XBE 64 MB flag cleared. */
+unsigned int Sys_XboxPhysicalMegs(void)
+{
+	MM_STATISTICS statistics;
+
+	memset(&statistics, 0, sizeof(statistics));
+	statistics.Length = sizeof(statistics);
+	if (MmQueryStatistics(&statistics) != 0)
+		return 0;
+	return (unsigned int)((statistics.TotalPhysicalPages * 4U) / 1024U);
+}
+
 void Sys_Print(const char *message)
 {
 	Sys_XboxLog("%s", message);

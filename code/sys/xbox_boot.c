@@ -48,6 +48,12 @@ int main(void)
 	XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
 	Sys_XboxLogOpen();
 	Sys_XboxLog("ioQuake3\n");
+	{
+		unsigned int physicalMegs = Sys_XboxPhysicalMegs();
+
+		Sys_XboxLog("Xbox RAM: %u MiB physical, %s unit detected\n", physicalMegs,
+			physicalMegs > 64 ? "128 MB" : "64 MB");
+	}
 	Sys_XboxLog("Xbox startup budget: hunk=%d MiB zone=%d MiB sound=%d units\n",
 		XBOX_COM_HUNK_MEGS, XBOX_COM_ZONE_MEGS, XBOX_COM_SOUND_MEGS);
 	/* Before Com_Init, so the DHCP/link-local wait still shows on the debug screen. */
