@@ -123,6 +123,26 @@ Exit: the executable reaches the running qcommon/client engine shell without
 SDL, desktop OpenGL, or proprietary XDK dependencies, with the native services
 connected to the full qcommon/client boundary. Met. [HIGH]
 
+### G7 — Default player name from the console
+
+Status: **complete** — hardware SUCCESS 2026-09-25
+
+- The `name` cvar defaults to the first Xbox Live account gamertag, as on the
+  PS3 and PS4 ports. `Sys_XboxInitDefaultPlayerName()` in `code/sys/sys_xbox.c`
+  runs before `Com_Init`, and `code/client/cl_main.c` passes the name as the
+  `Cvar_Get` default. The setup menu Defaults button (`cvar_restart`) keeps it.
+  Without an account, the default stays `UnnamedPlayer`. [HIGH]
+- The accounts are not in `C:\XONLINES.XBX` (the file does not exist). They
+  are plain text in the raw HDD config area, `\Device\Harddisk0\Partition0`.
+  [HIGH]
+- Layout from a hardware dump: sector 9 holds the machine account
+  (`SN.<12-digit serial>`); user accounts start at sector 12. Gamertag at +0x18,
+  domain (`insignia.live`) at +0x30, realm at +0x44. The code reads sectors
+  12-19 and takes the first printable gamertag. The deleted/valid flag is
+  unknown. [MEDIUM]
+- No dashboard fallback: the UnleashX "Xbox Name" `config.xml` was not found at
+  `C:\`, `E:\Dashboard`, `E:\UnleashX` or `E:\Apps\UnleashX`. [HIGH]
+
 ### G3 — Native NV2A renderer bring-up
 
 Status: **in progress (priority 1) — hardware-confirmed for menu, MD3 models,
@@ -305,24 +325,6 @@ Status: **not started (priority 5)**
 Exit: a clean package can be assembled from a fresh build and separately staged
 game data without manual source-tree edits.
 
-### G7 — Default player name from the console
-
-Status: **not started** (parked by Matt for later)
-
-- Goal: the `name` cvar defaults to the console's identity instead of
-  `UnnamedPlayer`, as on the PS3 and PS4 ports. Feed it into the `Cvar_Get`
-  default at `code/client/cl_main.c`, not a later `Cvar_Set`, so the setup menu
-  Defaults button (`cvar_restart`) keeps it. Resolve the name before `Com_Init`.
-- Source order: Xbox Live account name first, then the dashboard or softmod name.
-- Xbox Live account: believed to be in `C:\XONLINES.XBX`, probably encrypted with
-  an EEPROM-derived key (kernel `Xc*` crypto exports). Record layout unverified.
-  [LOW]
-- Dashboard or softmod name: location depends on the dashboard (UnleashX, XBMC,
-  other). Ask Matt which dashboard holds his name. [LOW]
-- Plan: (1) debug-only diagnostic that logs the size and header of
-  `C:\XONLINES.XBX`; (2) Matt runs it on hardware and sends the log; (3) write the
-  real parser; (4) add the dashboard fallback; (5) wire the default.
-
 ## Validation gates
 
 Future work uses these gates instead of an unconditional smoke-test loop:
@@ -339,7 +341,8 @@ Future work uses these gates instead of an unconditional smoke-test loop:
   hashes.
 
 Passed on hardware (V3): the engine shell, menu, MD3 models, BSP world, sky,
-cinematics, bot games, LAN networking and native game modules. Outstanding: combat effects (V3), G5 packaging, G6
+cinematics, bot games, LAN networking, native game modules and the default
+player name. Outstanding: combat effects (V3), G5 packaging, G6
 robustness and V4 acceptance. [HIGH]
 
 ## Definition of done

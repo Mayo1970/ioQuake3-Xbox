@@ -56,6 +56,7 @@ int main(void)
 	}
 	Sys_XboxLog("Xbox startup budget: hunk=%d MiB zone=%d MiB sound=%d units\n",
 		XBOX_COM_HUNK_MEGS, XBOX_COM_ZONE_MEGS, XBOX_COM_SOUND_MEGS);
+	Sys_XboxInitDefaultPlayerName();
 	/* Before Com_Init, so the DHCP/link-local wait still shows on the debug screen. */
 	Sys_XboxNetInit();
 	Sys_XboxMemoryReport("before Com_Init");

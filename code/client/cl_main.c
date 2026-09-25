@@ -26,6 +26,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../sys/sys_local.h"
 #include "../sys/sys_loadlib.h"
+#ifdef XBOX
+#include "../sys/sys_xbox.h"
+#endif
 
 #ifdef USE_MUMBLE
 #include "libmumblelink.h"
@@ -3675,7 +3678,12 @@ void CL_Init( void ) {
 	cl_consoleKeys = Cvar_Get( "cl_consoleKeys", "~ ` 0x7e 0x60", CVAR_ARCHIVE);
 
 	// userinfo
+#ifdef XBOX
+	// Gamertag as the default, not a Cvar_Set, so the setup menu Defaults button keeps it.
+	Cvar_Get ("name", Sys_XboxDefaultPlayerName(), CVAR_USERINFO | CVAR_ARCHIVE );
+#else
 	Cvar_Get ("name", "UnnamedPlayer", CVAR_USERINFO | CVAR_ARCHIVE );
+#endif
 	cl_rate = Cvar_Get ("rate", "25000", CVAR_USERINFO | CVAR_ARCHIVE );
 	Cvar_Get ("snaps", "20", CVAR_USERINFO | CVAR_ARCHIVE );
 	Cvar_Get ("model", "sarge", CVAR_USERINFO | CVAR_ARCHIVE );

@@ -491,6 +491,72 @@ FILE *Sys_XboxOpenGameFile(const char *qpath, const char *mode)
 	return Sys_FOpen(path, mode);
 }
 
+/* HDD config area: user accounts in sectors 12-19, gamertag at +0x18. Sector 9 is the
+   "SN.<serial>" machine account. Layout from a hardware dump; the valid flag is unknown. */
+#define XBOX_ACCOUNT_FIRST_SECTOR 12
+#define XBOX_ACCOUNT_SECTORS 8
+#define XBOX_ACCOUNT_GAMERTAG_OFFSET 0x18
+#define XBOX_ACCOUNT_GAMERTAG_BYTES 16
+
+static char xboxPlayerName[XBOX_ACCOUNT_GAMERTAG_BYTES];
+static unsigned char xboxAccountSectors[XBOX_ACCOUNT_SECTORS * 512] __attribute__((aligned(512)));
+
+void Sys_XboxInitDefaultPlayerName(void)
+{
+	ANSI_STRING name;
+	OBJECT_ATTRIBUTES attributes;
+	IO_STATUS_BLOCK io;
+	LARGE_INTEGER offset;
+	HANDLE handle;
+	NTSTATUS status;
+	int sector;
+	int i;
+	int o;
+
+	RtlInitAnsiString(&name, "\\Device\\Harddisk0\\Partition0");
+	InitializeObjectAttributes(&attributes, &name, OBJ_CASE_INSENSITIVE, NULL, NULL);
+	status = NtOpenFile(&handle, FILE_GENERIC_READ, &attributes, &io,
+		FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_NO_INTERMEDIATE_BUFFERING | FILE_SYNCHRONOUS_IO_NONALERT);
+	if (!NT_SUCCESS(status))
+	{
+		Sys_XboxLog("Xbox player name: config area open failed 0x%08x\n", (unsigned int)status);
+		return;
+	}
+	offset.QuadPart = XBOX_ACCOUNT_FIRST_SECTOR * 512;
+	status = NtReadFile(handle, NULL, NULL, NULL, &io, xboxAccountSectors,
+		sizeof(xboxAccountSectors), &offset);
+	NtClose(handle);
+	if (!NT_SUCCESS(status))
+	{
+		Sys_XboxLog("Xbox player name: config area read failed 0x%08x\n", (unsigned int)status);
+		return;
+	}
+
+	for (sector = 0; sector < XBOX_ACCOUNT_SECTORS && !xboxPlayerName[0]; sector++)
+	{
+		const unsigned char *tag = xboxAccountSectors + sector * 512 + XBOX_ACCOUNT_GAMERTAG_OFFSET;
+
+		/* Same filter as the PS3 port: quotes, backslash and ';' break userinfo parsing. */
+		for (i = 0, o = 0; i < XBOX_ACCOUNT_GAMERTAG_BYTES - 1 && tag[i]; i++)
+		{
+			if (tag[i] < 0x20 || tag[i] >= 0x7f)
+			{
+				o = 0;
+				break;
+			}
+			if (tag[i] != '"' && tag[i] != '\\' && tag[i] != ';')
+				xboxPlayerName[o++] = (char)tag[i];
+		}
+		xboxPlayerName[o] = '\0';
+	}
+	Sys_XboxLog("Xbox player name: %s\n", xboxPlayerName[0] ? xboxPlayerName : "no account found");
+}
+
+const char *Sys_XboxDefaultPlayerName(void)
+{
+	return xboxPlayerName[0] ? xboxPlayerName : "UnnamedPlayer";
+}
+
 void Sys_XboxPlatformInit(void)
 {
 	Sys_XboxLog("Xbox platform services: base=%s home=%s\n",

@@ -22,6 +22,9 @@ unsigned int Sys_XboxPhysicalMegs(void);
 void Sys_XboxServerTrace(char *buffer, int size);
 void Sys_XboxDiagFrame(void);
 void Sys_XboxStartWatchdog(void (*report)(const char *tag));
+/* Call before Com_Init: CL_Init uses the name as the "name" cvar default, so cvar_restart keeps it. */
+void Sys_XboxInitDefaultPlayerName(void);
+const char *Sys_XboxDefaultPlayerName(void);
 void Sys_XboxSleep(unsigned int milliseconds);
 void Sys_XboxRequestExit(void);
 int Sys_XboxExitRequested(void);

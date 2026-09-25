@@ -38,7 +38,8 @@
   /src/code/client/../sys/sys_local.h \
   /src/code/client/../sys/../qcommon/q_shared.h \
   /src/code/client/../sys/../qcommon/qcommon.h \
-  /src/code/client/../sys/sys_loadlib.h
+  /src/code/client/../sys/sys_loadlib.h \
+  /src/code/client/../sys/sys_xbox.h
 /src/code/client/client.h:
 /src/code/client/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
@@ -82,3 +83,4 @@
 /src/code/client/../sys/../qcommon/q_shared.h:
 /src/code/client/../sys/../qcommon/qcommon.h:
 /src/code/client/../sys/sys_loadlib.h:
+/src/code/client/../sys/sys_xbox.h:
