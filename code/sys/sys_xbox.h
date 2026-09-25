@@ -6,6 +6,15 @@
 #include <stdint.h>
 #include <stdio.h>
 
+/* Per-flavor names, as ps3_gamedir_defs.h does on the PS3 port. */
+#ifdef STANDALONEOA
+#define XBOX_TITLE "OpenArena"
+#define XBOX_LOG_PATH "D:\\ioquake3_oa.log"
+#else
+#define XBOX_TITLE "ioQuake3"
+#define XBOX_LOG_PATH "D:\\ioquake3.log"
+#endif
+
 void Sys_XboxLogOpen(void);
 void Sys_XboxLog(const char *format, ...);
 void Sys_XboxMemoryReport(const char *stage);

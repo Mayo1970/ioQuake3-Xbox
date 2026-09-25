@@ -1,6 +1,5 @@
-/workspace/code/server/sv_bot.obj: /workspace/code/server/sv_bot.c \
-  /workspace/code/server/server.h \
-  /workspace/code/server/../qcommon/q_shared.h \
+/src/code/server/sv_bot.obj: /src/code/server/sv_bot.c \
+  /src/code/server/server.h /src/code/server/../qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
@@ -25,16 +24,16 @@
   /usr/src/nxdk/lib/pdclib/include/time.h \
   /usr/src/nxdk/lib/pdclib/include/ctype.h \
   /usr/src/nxdk/lib/pdclib/include/limits.h \
-  /workspace/code/server/../qcommon/q_platform.h \
-  /workspace/code/server/../qcommon/surfaceflags.h \
-  /workspace/code/server/../qcommon/qcommon.h \
-  /workspace/code/server/../qcommon/../qcommon/cm_public.h \
-  /workspace/code/server/../qcommon/../qcommon/qfiles.h \
-  /workspace/code/server/../game/g_public.h \
-  /workspace/code/server/../game/bg_public.h \
-  /workspace/code/server/../botlib/botlib.h
-/workspace/code/server/server.h:
-/workspace/code/server/../qcommon/q_shared.h:
+  /src/code/server/../qcommon/q_platform.h \
+  /src/code/server/../qcommon/surfaceflags.h \
+  /src/code/server/../qcommon/qcommon.h \
+  /src/code/server/../qcommon/../qcommon/cm_public.h \
+  /src/code/server/../qcommon/../qcommon/qfiles.h \
+  /src/code/server/../game/g_public.h \
+  /src/code/server/../game/bg_public.h \
+  /src/code/server/../botlib/botlib.h
+/src/code/server/server.h:
+/src/code/server/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
@@ -59,11 +58,11 @@
 /usr/src/nxdk/lib/pdclib/include/time.h:
 /usr/src/nxdk/lib/pdclib/include/ctype.h:
 /usr/src/nxdk/lib/pdclib/include/limits.h:
-/workspace/code/server/../qcommon/q_platform.h:
-/workspace/code/server/../qcommon/surfaceflags.h:
-/workspace/code/server/../qcommon/qcommon.h:
-/workspace/code/server/../qcommon/../qcommon/cm_public.h:
-/workspace/code/server/../qcommon/../qcommon/qfiles.h:
-/workspace/code/server/../game/g_public.h:
-/workspace/code/server/../game/bg_public.h:
-/workspace/code/server/../botlib/botlib.h:
+/src/code/server/../qcommon/q_platform.h:
+/src/code/server/../qcommon/surfaceflags.h:
+/src/code/server/../qcommon/qcommon.h:
+/src/code/server/../qcommon/../qcommon/cm_public.h:
+/src/code/server/../qcommon/../qcommon/qfiles.h:
+/src/code/server/../game/g_public.h:
+/src/code/server/../game/bg_public.h:
+/src/code/server/../botlib/botlib.h:

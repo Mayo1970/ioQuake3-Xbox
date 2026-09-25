@@ -1588,6 +1588,10 @@ void SV_ExecuteClientCommand( client_t *cl, const char *s, qboolean clientOK ) {
 	if (clientOK) {
 		// pass unknown strings to the game
 		if (!u->name && sv.state == SS_GAME && (cl->state == CS_ACTIVE || cl->state == CS_PRIMED)) {
+#ifdef STANDALONEOA
+			// OA engine: chat text is not sanitized, so ';' survives in messages.
+			if ( strcmp( Cmd_Argv(0), "say" ) && strcmp( Cmd_Argv(0), "say_team" ) )
+#endif
 			Cmd_Args_Sanitize();
 			VM_Call( gvm, GAME_CLIENT_COMMAND, cl - svs.clients );
 		}

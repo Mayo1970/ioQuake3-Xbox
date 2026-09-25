@@ -47,7 +47,7 @@ int main(void)
 
 	XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
 	Sys_XboxLogOpen();
-	Sys_XboxLog("ioQuake3\n");
+	Sys_XboxLog(XBOX_TITLE "\n");
 	{
 		unsigned int physicalMegs = Sys_XboxPhysicalMegs();
 

@@ -245,7 +245,12 @@ PROTOCOL
 */
 
 #define	PROTOCOL_VERSION	71
+#ifdef STANDALONEOA
+// OA servers speak the legacy netchan at 71.
+#define PROTOCOL_LEGACY_VERSION	71
+#else
 #define PROTOCOL_LEGACY_VERSION	68
+#endif
 // 1.31 - 67
 
 // maintain a list of compatible protocols for demo playing
@@ -257,10 +262,17 @@ extern int demo_protocols[];
 #endif
 // override on command line, config files etc.
 #ifndef MASTER_SERVER_NAME
-#define MASTER_SERVER_NAME	"master.quake3arena.com"
+  #ifdef STANDALONEOA
+  #define MASTER_SERVER_NAME	"dpmaster.deathmask.net"
+  #else
+  #define MASTER_SERVER_NAME	"master.quake3arena.com"
+  #endif
 #endif
 
 #ifndef STANDALONE
+  #ifdef STANDALONEOA
+    #define AUTHORIZE_SERVER_NAME	"dpmaster.deathmask.net"
+  #endif
   #ifndef AUTHORIZE_SERVER_NAME
     #define	AUTHORIZE_SERVER_NAME	"authorize.quake3arena.com"
   #endif

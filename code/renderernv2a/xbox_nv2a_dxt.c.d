@@ -1,7 +1,7 @@
-/work/code/renderernv2a/xbox_nv2a_dxt.obj: \
-  /work/code/renderernv2a/xbox_nv2a_dxt.c \
-  /work/code/renderernv2a/xbox_nv2a.h \
-  /work/code/renderernv2a/../qcommon/q_shared.h \
+/src/code/renderernv2a/xbox_nv2a_dxt.obj: \
+  /src/code/renderernv2a/xbox_nv2a_dxt.c \
+  /src/code/renderernv2a/xbox_nv2a.h \
+  /src/code/renderernv2a/../qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
@@ -26,13 +26,13 @@
   /usr/src/nxdk/lib/pdclib/include/time.h \
   /usr/src/nxdk/lib/pdclib/include/ctype.h \
   /usr/src/nxdk/lib/pdclib/include/limits.h \
-  /work/code/renderernv2a/../qcommon/q_platform.h \
-  /work/code/renderernv2a/../qcommon/surfaceflags.h \
-  /work/code/renderernv2a/../qcommon/qfiles.h \
-  /work/code/renderernv2a/../renderercommon/tr_public.h \
-  /work/code/renderernv2a/../renderercommon/tr_types.h
-/work/code/renderernv2a/xbox_nv2a.h:
-/work/code/renderernv2a/../qcommon/q_shared.h:
+  /src/code/renderernv2a/../qcommon/q_platform.h \
+  /src/code/renderernv2a/../qcommon/surfaceflags.h \
+  /src/code/renderernv2a/../qcommon/qfiles.h \
+  /src/code/renderernv2a/../renderercommon/tr_public.h \
+  /src/code/renderernv2a/../renderercommon/tr_types.h
+/src/code/renderernv2a/xbox_nv2a.h:
+/src/code/renderernv2a/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
@@ -57,8 +57,8 @@
 /usr/src/nxdk/lib/pdclib/include/time.h:
 /usr/src/nxdk/lib/pdclib/include/ctype.h:
 /usr/src/nxdk/lib/pdclib/include/limits.h:
-/work/code/renderernv2a/../qcommon/q_platform.h:
-/work/code/renderernv2a/../qcommon/surfaceflags.h:
-/work/code/renderernv2a/../qcommon/qfiles.h:
-/work/code/renderernv2a/../renderercommon/tr_public.h:
-/work/code/renderernv2a/../renderercommon/tr_types.h:
+/src/code/renderernv2a/../qcommon/q_platform.h:
+/src/code/renderernv2a/../qcommon/surfaceflags.h:
+/src/code/renderernv2a/../qcommon/qfiles.h:
+/src/code/renderernv2a/../renderercommon/tr_public.h:
+/src/code/renderernv2a/../renderercommon/tr_types.h:

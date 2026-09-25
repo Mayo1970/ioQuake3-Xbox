@@ -2533,7 +2533,7 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame)
 	xboxNV2ATess.fastIndexes = 0;
 	if (XBOX_NV2A_DIAGNOSTICS) {
 		pb_erase_text_screen();
-		pb_printat(0, 0, "ioQuake3 Xbox NV2A %dx%d", xboxNV2AWidth, xboxNV2AHeight);
+		pb_printat(0, 0, XBOX_TITLE " Xbox NV2A %dx%d", xboxNV2AWidth, xboxNV2AHeight);
 		pb_printat(1, 0, "xgu textured 2D UI path");
 	}
 

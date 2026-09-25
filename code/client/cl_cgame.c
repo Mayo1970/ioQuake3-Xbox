@@ -618,7 +618,12 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 		Com_Memcpy( VMA(1), VMA(2), args[3] );
 		return 0;
 	case CG_STRNCPY:
+#ifdef STANDALONEOA
+		// OA engine fix: QVMs pass overlapping buffers, which strncpy leaves undefined.
+		Q_strncpy( VMA(1), VMA(2), args[3] );
+#else
 		strncpy( VMA(1), VMA(2), args[3] );
+#endif
 		return args[1];
 	case CG_SIN:
 		return FloatAsInt( sin( VMF(1) ) );

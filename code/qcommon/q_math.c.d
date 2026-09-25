@@ -1,5 +1,5 @@
-/work/code/qcommon/q_math.obj: /work/code/qcommon/q_math.c \
-  /work/code/qcommon/q_shared.h \
+/src/code/qcommon/q_math.obj: /src/code/qcommon/q_math.c \
+  /src/code/qcommon/q_shared.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h \
   /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h \
   /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h \
@@ -24,8 +24,8 @@
   /usr/src/nxdk/lib/pdclib/include/time.h \
   /usr/src/nxdk/lib/pdclib/include/ctype.h \
   /usr/src/nxdk/lib/pdclib/include/limits.h \
-  /work/code/qcommon/q_platform.h /work/code/qcommon/surfaceflags.h
-/work/code/qcommon/q_shared.h:
+  /src/code/qcommon/q_platform.h /src/code/qcommon/surfaceflags.h
+/src/code/qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_aux.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/math.h:
@@ -50,5 +50,5 @@
 /usr/src/nxdk/lib/pdclib/include/time.h:
 /usr/src/nxdk/lib/pdclib/include/ctype.h:
 /usr/src/nxdk/lib/pdclib/include/limits.h:
-/work/code/qcommon/q_platform.h:
-/work/code/qcommon/surfaceflags.h:
+/src/code/qcommon/q_platform.h:
+/src/code/qcommon/surfaceflags.h:

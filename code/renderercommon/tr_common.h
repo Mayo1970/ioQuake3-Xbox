@@ -149,6 +149,10 @@ IMAGE LOADERS
 
 void R_LoadBMP( const char *name, byte **pic, int *width, int *height );
 void R_LoadJPG( const char *name, byte **pic, int *width, int *height );
+#ifdef XBOX
+// Decodes at half size when both sides are even; returns qtrue if it did.
+qboolean R_LoadJPGHalf( const char *name, byte **pic, int *width, int *height );
+#endif
 void R_LoadPCX( const char *name, byte **pic, int *width, int *height );
 void R_LoadPNG( const char *name, byte **pic, int *width, int *height );
 void R_LoadPVR( const char *name, byte **pic, int *width, int *height );

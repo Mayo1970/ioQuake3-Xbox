@@ -44,9 +44,9 @@ void Sys_XboxLogOpen(void)
 	if (xboxLogFile)
 		return;
 
-	xboxLogFile = fopen("D:\\ioquake3.log", "wb");
+	xboxLogFile = fopen(XBOX_LOG_PATH, "wb");
 	if (!xboxLogFile)
-		debugPrint("Xbox log open failed: D:\\ioquake3.log\n");
+		debugPrint("Xbox log open failed: " XBOX_LOG_PATH "\n");
 #endif
 }
 
@@ -450,23 +450,23 @@ const char *Sys_XboxHomePath(void)
 		DWORD attributes;
 
 		/* Mutable data belongs on E:, but some launchers do not mount it; */
-		/* fall back to D:\baseq3, which already holds the shipped game data. */
-		if (CreateDirectoryA("E:\\baseq3", NULL))
+		/* fall back to D:\BASEGAME, which already holds the shipped game data. */
+		if (CreateDirectoryA("E:\\" BASEGAME, NULL))
 		{
 			Q_strncpyz(xboxHomePath, "E:", sizeof(xboxHomePath));
 		}
 		else
 		{
-			attributes = GetFileAttributesA("E:\\baseq3");
+			attributes = GetFileAttributesA("E:\\" BASEGAME);
 			if (attributes != INVALID_FILE_ATTRIBUTES &&
 				(attributes & FILE_ATTRIBUTE_DIRECTORY))
 			{
 				Q_strncpyz(xboxHomePath, "E:", sizeof(xboxHomePath));
 			}
-			else if ((attributes = GetFileAttributesA("D:\\baseq3")) != INVALID_FILE_ATTRIBUTES &&
+			else if ((attributes = GetFileAttributesA("D:\\" BASEGAME)) != INVALID_FILE_ATTRIBUTES &&
 				(attributes & FILE_ATTRIBUTE_DIRECTORY))
 			{
-				Sys_XboxLog("Xbox home path: E:\\baseq3 unavailable, using D:\\baseq3\n");
+				Sys_XboxLog("Xbox home path: E:\\" BASEGAME " unavailable, using D:\\" BASEGAME "\n");
 				Q_strncpyz(xboxHomePath, "D:", sizeof(xboxHomePath));
 			}
 			else

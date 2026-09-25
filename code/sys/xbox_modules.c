@@ -76,7 +76,7 @@ static xboxModule_t *Sys_XboxFindModule(const char *name)
 
 int Sys_XboxUseBuiltinModule(const char *name)
 {
-	/* These are the baseq3 modules; mods keep loading their own QVMs. */
+	/* These are the BASEGAME modules; mods keep loading their own QVMs. */
 	return Sys_XboxFindModule(name) && !Q_stricmp(FS_GetCurrentGameDir(), BASEGAME);
 }
 

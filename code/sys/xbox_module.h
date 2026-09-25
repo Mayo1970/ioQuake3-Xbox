@@ -32,7 +32,12 @@
 #pragma clang section bss=".bss$ui1" data=".data$ui1"
 #endif
 
+/* OA modules build against their own vendored qcommon, as in the OA tree. */
+#ifdef STANDALONEOA
+#include "../../oa/code/qcommon/q_shared.h"
+#else
 #include "../qcommon/q_shared.h"
+#endif
 
 /* The entry points are linked into the XBE, not exported from a DLL. */
 #undef Q_EXPORT

@@ -78,7 +78,12 @@ static void R_JPGOutputMessage(j_common_ptr cinfo)
   ri.Printf(PRINT_ALL, "%s\n", buffer);
 }
 
+#ifdef XBOX
+static void R_LoadJPGScale(const char *filename, unsigned char **pic, int *width, int *height,
+	qboolean half, qboolean *halved)
+#else
 void R_LoadJPG(const char *filename, unsigned char **pic, int *width, int *height)
+#endif
 {
   /* This struct contains the JPEG decompression parameters and pointers to
    * working space (which is allocated as needed by the JPEG library).
@@ -109,6 +114,10 @@ void R_LoadJPG(const char *filename, unsigned char **pic, int *width, int *heigh
 		void *v;
 	} fbuffer;
   byte  *buf;
+
+#ifdef XBOX
+  *halved = qfalse;
+#endif
 
   /* In this example we want to open the input file before doing anything else,
    * so that the setjmp() error recovery below can assume the file is open.
@@ -169,6 +178,15 @@ void R_LoadJPG(const char *filename, unsigned char **pic, int *width, int *heigh
    * automatically convert 8-bit greyscale images to RGB as well.
    */
   cinfo.out_color_space = JCS_RGB;
+#ifdef XBOX
+  // libjpeg scales while decoding, so the RGBA buffer is a quarter the size.
+  // Odd sizes stay full, so power-of-two rounding gives the same result as a later halving.
+  if (half && !(cinfo.image_width & 1) && !(cinfo.image_height & 1)) {
+    cinfo.scale_num = 1;
+    cinfo.scale_denom = 2;
+    *halved = qtrue;
+  }
+#endif
 
   /* Step 5: Start decompressor */
 
@@ -265,6 +283,23 @@ void R_LoadJPG(const char *filename, unsigned char **pic, int *width, int *heigh
 
   /* And we're done! */
 }
+
+#ifdef XBOX
+void R_LoadJPG(const char *filename, unsigned char **pic, int *width, int *height)
+{
+  qboolean halved;
+
+  R_LoadJPGScale(filename, pic, width, height, qfalse, &halved);
+}
+
+qboolean R_LoadJPGHalf(const char *filename, unsigned char **pic, int *width, int *height)
+{
+  qboolean halved;
+
+  R_LoadJPGScale(filename, pic, width, height, qtrue, &halved);
+  return halved;
+}
+#endif
 
 
 /* Expanded data destination object for stdio output */

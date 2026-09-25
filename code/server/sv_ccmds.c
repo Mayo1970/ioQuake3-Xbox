@@ -172,6 +172,10 @@ static void SV_Map_f( void ) {
 
 	// force latched values to get set
 	Cvar_Get ("g_gametype", "0", CVAR_SERVERINFO | CVAR_USERINFO | CVAR_LATCH );
+#ifdef STANDALONEOA
+	// A full map load already does the restart OA's game asked for.
+	Cvar_Set( "sv_dorestart", "0" );
+#endif
 
 	cmd = Cmd_Argv(0);
 	if( Q_stricmpn( cmd, "sp", 2 ) == 0 ) {
@@ -262,9 +266,16 @@ static void SV_MapRestart_f( void ) {
 
 	// check for changes in variables that can't just be restarted
 	// check for maxclients change
-	if ( sv_maxclients->modified || sv_gametype->modified ) {
+	if ( sv_maxclients->modified || sv_gametype->modified
+#ifdef STANDALONEOA
+		|| sv_dorestart->integer
+#endif
+		) {
 		char	mapname[MAX_QPATH];
 
+#ifdef STANDALONEOA
+		Cvar_Set( "sv_dorestart", "0" );
+#endif
 		Com_Printf( "variable change -- restarting.\n" );
 		// restart the map the slow way
 		Q_strncpyz( mapname, Cvar_VariableString( "mapname" ), sizeof( mapname ) );

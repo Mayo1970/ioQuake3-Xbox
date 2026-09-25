@@ -52,7 +52,7 @@ vec4_t	colorLtGrey = {0.75f, 0.75f, 0.75f, 1.0f};
 vec4_t	colorMdGrey = {0.5f,  0.5f,  0.5f,  1.0f};
 vec4_t	colorDkGrey = {0.25f, 0.25f, 0.25f, 1.0f};
 
-vec4_t	g_color_table[8] =
+vec4_t	g_color_table[NUMBER_OF_COLORS] =
 {
 	{0.0f, 0.0f, 0.0f, 1.0f},
 	{1.0f, 0.0f, 0.0f, 1.0f},
@@ -62,6 +62,9 @@ vec4_t	g_color_table[8] =
 	{0.0f, 1.0f, 1.0f, 1.0f},
 	{1.0f, 0.0f, 1.0f, 1.0f},
 	{1.0f, 1.0f, 1.0f, 1.0f},
+#ifdef STANDALONEOA
+	{1.0f, 0.43f, 0.0f, 1.0f},
+#endif
 };
 
 

@@ -1,8 +1,22 @@
 # Native OG Xbox target, independent of the host CMake build.
 # No SDL, OpenGL, or desktop platform libraries enter this target.
 
+# Flavor: q3 by default; `make -f Makefile.xbox oa` or OA=1 builds Open Arena.
+ifeq ($(MAKECMDGOALS),oa)
+OA := 1
+endif
+
+ifeq ($(OA),1)
+FLAVOR = oa
+XBE_TITLE = "Open Arena"
+OUTPUT_DIR = build_xbox_oa
+FLAVOR_DEFINES = -DSTANDALONEOA
+else
+FLAVOR = q3
 XBE_TITLE = ioQuake3
 OUTPUT_DIR = build_xbox
+FLAVOR_DEFINES =
+endif
 
 SRCS = \
 	$(CURDIR)/code/sys/xbox_boot.c \
@@ -102,7 +116,7 @@ SRCS = \
 
 # nxdk supplies the Pentium III-safe ABI; XBOX is explicit so conditionals
 # never depend on an incidental compiler macro.
-NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DIOQUAKE3_XBOX_SHELL -DBOTLIB -DC_ONLY -O2 -ffunction-sections -fno-exceptions 	-DUSE_INTERNAL_JPEG -I$(CURDIR)/code/thirdparty/jpeg-9f \
+NXDK_CFLAGS += -DXBOX -DIOQUAKE3_XBOX -DIOQUAKE3_XBOX_SHELL -DBOTLIB -DC_ONLY $(FLAVOR_DEFINES) -O2 -ffunction-sections -fno-exceptions 	-DUSE_INTERNAL_JPEG -I$(CURDIR)/code/thirdparty/jpeg-9f \
 	-I/usr/src/nxdk/lib/net/lwip/src/include \
 	-I/usr/src/nxdk/lib/net/lwip/src/include/compat/posix
 NXDK_NET = y
@@ -117,11 +131,55 @@ SHADER_OBJS = \
 
 # nxdk's base USB library includes the XID driver.
 
-# Native baseq3 modules, paths relative to code/ (lists from cmake/basegame.cmake).
-XBOX_MODULE_DIR = $(CURDIR)/build_xbox/modules
-XBOX_MODULE_SHARED = qcommon/q_math.c qcommon/q_shared.c sys/xbox_module_libc.c
-XBOX_MODULE_CFLAGS = -DXBOX -DC_ONLY -O2 -fno-exceptions \
+# Native modules, paths relative to XBOX_MODULE_ROOT.
+XBOX_MODULE_DIR = $(CURDIR)/$(OUTPUT_DIR)/modules
+XBOX_MODULE_SHARED = qcommon/q_math.c qcommon/q_shared.c
+XBOX_MODULE_LIBC = $(CURDIR)/code/sys/xbox_module_libc.c
+XBOX_MODULE_CFLAGS = -DXBOX -DC_ONLY $(FLAVOR_DEFINES) -O2 -fno-exceptions \
 	-include $(CURDIR)/code/sys/xbox_module.h
+
+ifeq ($(FLAVOR),oa)
+# OA 0.8.8 gamecode (OA gamecode repo, oa-0.8.8 branch) vendored in oa/.
+# Lists from its Makefile, minus bg_lib.c, which is Q3_VM-only.
+XBOX_MODULE_ROOT = $(CURDIR)/oa/code
+
+qagame_SRCS = \
+	game/g_main.c game/ai_chat.c game/ai_cmd.c game/ai_dmnet.c game/ai_dmq3.c \
+	game/ai_main.c game/ai_team.c game/ai_vcmd.c game/bg_misc.c game/bg_pmove.c \
+	game/bg_slidemove.c game/g_active.c game/g_arenas.c game/g_admin.c game/g_bot.c \
+	game/g_client.c game/g_cmds.c game/g_cmds_ext.c game/g_combat.c game/g_items.c \
+	game/bg_alloc.c game/g_fileops.c game/g_killspree.c game/g_misc.c game/g_missile.c \
+	game/g_mover.c game/g_playerstore.c game/g_session.c game/g_spawn.c game/g_svcmds.c \
+	game/g_svcmds_ext.c game/g_target.c game/g_team.c game/g_trigger.c game/g_unlagged.c \
+	game/g_utils.c game/g_vote.c game/g_weapon.c game/g_syscalls.c $(XBOX_MODULE_SHARED)
+
+cgame_SRCS = \
+	cgame/cg_main.c game/bg_misc.c game/bg_pmove.c game/bg_slidemove.c \
+	cgame/cg_challenges.c cgame/cg_consolecmds.c cgame/cg_draw.c cgame/cg_drawtools.c \
+	cgame/cg_effects.c cgame/cg_ents.c cgame/cg_event.c cgame/cg_info.c \
+	cgame/cg_localents.c cgame/cg_marks.c cgame/cg_players.c cgame/cg_playerstate.c \
+	cgame/cg_predict.c cgame/cg_scoreboard.c cgame/cg_servercmds.c cgame/cg_snapshot.c \
+	cgame/cg_unlagged.c cgame/cg_view.c cgame/cg_weapons.c cgame/cg_syscalls.c \
+	$(XBOX_MODULE_SHARED)
+
+ui_SRCS = \
+	q3_ui/ui_main.c game/bg_misc.c q3_ui/ui_addbots.c q3_ui/ui_atoms.c q3_ui/ui_cdkey.c \
+	q3_ui/ui_challenges.c q3_ui/ui_cinematics.c q3_ui/ui_confirm.c q3_ui/ui_connect.c \
+	q3_ui/ui_controls2.c q3_ui/ui_credits.c q3_ui/ui_demo2.c q3_ui/ui_display.c \
+	q3_ui/ui_firstconnect.c q3_ui/ui_gameinfo.c q3_ui/ui_ingame.c q3_ui/ui_loadconfig.c \
+	q3_ui/ui_menu.c q3_ui/ui_mfield.c q3_ui/ui_mods.c q3_ui/ui_network.c q3_ui/ui_options.c \
+	q3_ui/ui_password.c q3_ui/ui_playermodel.c q3_ui/ui_players.c q3_ui/ui_playersettings.c \
+	q3_ui/ui_preferences.c q3_ui/ui_qmenu.c q3_ui/ui_removebots.c q3_ui/ui_saveconfig.c \
+	q3_ui/ui_serverinfo.c q3_ui/ui_servers2.c q3_ui/ui_setup.c q3_ui/ui_sound.c \
+	q3_ui/ui_sparena.c q3_ui/ui_specifyserver.c q3_ui/ui_splevel.c q3_ui/ui_sppostgame.c \
+	q3_ui/ui_spskill.c q3_ui/ui_startserver.c q3_ui/ui_team.c q3_ui/ui_teamorders.c \
+	q3_ui/ui_video.c q3_ui/ui_votemenu.c q3_ui/ui_votemenu_fraglimit.c \
+	q3_ui/ui_votemenu_timelimit.c q3_ui/ui_votemenu_gametype.c q3_ui/ui_votemenu_kick.c \
+	q3_ui/ui_votemenu_map.c q3_ui/ui_votemenu_custom.c ui/ui_syscalls.c \
+	$(XBOX_MODULE_SHARED)
+else
+# baseq3 lists from cmake/basegame.cmake.
+XBOX_MODULE_ROOT = $(CURDIR)/code
 
 qagame_SRCS = \
 	game/g_main.c game/ai_chat.c game/ai_cmd.c game/ai_dmnet.c game/ai_dmq3.c \
@@ -152,6 +210,7 @@ ui_SRCS = \
 	q3_ui/ui_splevel.c q3_ui/ui_sppostgame.c q3_ui/ui_spskill.c q3_ui/ui_startserver.c \
 	q3_ui/ui_team.c q3_ui/ui_teamorders.c q3_ui/ui_video.c ui/ui_syscalls.c \
 	$(XBOX_MODULE_SHARED)
+endif
 
 XBOX_MODULE_OBJS = $(XBOX_MODULE_DIR)/qagame.obj $(XBOX_MODULE_DIR)/cgame.obj \
 	$(XBOX_MODULE_DIR)/ui.obj
@@ -162,14 +221,24 @@ NXDK_DIR ?= /usr/src/nxdk
 include $(NXDK_DIR)/Makefile
 
 # cxbe cannot write $$XTIMAGE (dashboard icon) or clear the 64 MB flag; patch both after every link.
-$(OUTPUT_DIR)/.xbe_icon: $(OUTPUT_DIR)/default.xbe $(CURDIR)/icons/TitleImage.xbx \
+$(OUTPUT_DIR)/.xbe_icon: $(OUTPUT_DIR)/default.xbe $(CURDIR)/icons/$(FLAVOR)/TitleImage.xbx \
 	$(CURDIR)/tools/xbe_add_icon.py $(CURDIR)/tools/xbe_clear_limit64.py
 	@echo "[ ICON     ] $(OUTPUT_DIR)/default.xbe"
 	$(VE)python3 $(CURDIR)/tools/xbe_add_icon.py $(OUTPUT_DIR)/default.xbe \
-		$(CURDIR)/icons/TitleImage.xbx
+		$(CURDIR)/icons/$(FLAVOR)/TitleImage.xbx
 	$(VE)python3 $(CURDIR)/tools/xbe_clear_limit64.py $(OUTPUT_DIR)/default.xbe
 	@touch $@
 all: $(OUTPUT_DIR)/.xbe_icon
+
+.PHONY: oa
+oa: all
+
+# Engine objects sit beside their sources and carry the flavor defines, so a flavor switch
+# rewrites this stamp and rebuilds them.
+XBOX_FLAVOR_STAMP = $(CURDIR)/build_xbox/.flavor
+$(shell mkdir -p $(CURDIR)/build_xbox; [ "`cat $(XBOX_FLAVOR_STAMP) 2>/dev/null`" = "$(FLAVOR)" ] || \
+	echo $(FLAVOR) > $(XBOX_FLAVOR_STAMP))
+$(OBJS): $(XBOX_FLAVOR_STAMP)
 
 # Hot per-vertex code only; the rest and the game modules stay -O2 without fast-math.
 # Flags are not tracked, so delete these objects after changing them.
@@ -187,9 +256,10 @@ LD = lld -flavor link -subsystem:windows -fixed -base:0x00010000 -stack:1048576 
 # Args: module, module define, entry suffix (xbox_module.h). Internalize keeps only the two
 # entry points global, so each module's q_shared/bg_misc/Com_Printf never clash in the link.
 define XBOX_MODULE_RULES
-$(1)_BC = $$(patsubst %.c,$$(XBOX_MODULE_DIR)/$(1)/%.bc,$$($(1)_SRCS))
+$(1)_BC = $$(patsubst $$(CURDIR)/%.c,$$(XBOX_MODULE_DIR)/$(1)/%.bc, \
+	$$(addprefix $$(XBOX_MODULE_ROOT)/,$$($(1)_SRCS)) $$(XBOX_MODULE_LIBC))
 
-$$(XBOX_MODULE_DIR)/$(1)/%.bc: $$(CURDIR)/code/%.c
+$$(XBOX_MODULE_DIR)/$(1)/%.bc: $$(CURDIR)/%.c
 	@mkdir -p $$(dir $$@)
 	@echo "[ CC $(1) ] $$@"
 	$$(VE)$$(CC) $$(XBOX_MODULE_CFLAGS) -D$(2) -MD -MP -MT '$$@' -MF '$$@.d' \

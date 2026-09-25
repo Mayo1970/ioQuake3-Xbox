@@ -35,7 +35,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #endif
 
 int demo_protocols[] =
+#ifdef STANDALONEOA
+// OA engine list: OA 0.7.x-0.8.x recorded protocols 68-71.
+{ 66, 67, 68, 69, 70, 71, 0 };
+#else
 { 67, 66, 0 };
+#endif
 
 #define MAX_NUM_ARGVS	50
 
@@ -2288,7 +2293,11 @@ void Com_Init( char *commandLine ) {
 	// done early so bind command exists
 	CL_InitKeyCommands();
 
+#ifdef STANDALONEOA
+	com_standalone = Cvar_Get("com_standalone", "1", CVAR_ROM);
+#else
 	com_standalone = Cvar_Get("com_standalone", "0", CVAR_ROM);
+#endif
 	com_basegame = Cvar_Get("com_basegame", BASEGAME, CVAR_INIT);
 	com_homepath = Cvar_Get("com_homepath", "", CVAR_INIT|CVAR_PROTECTED);
 

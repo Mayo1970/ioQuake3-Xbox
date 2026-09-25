@@ -39,6 +39,18 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //  #define LEGACY_PROTOCOL	// You probably don't need this for your standalone game
 //  #define PROTOCOL_HANDLER		"foobar"
   #define CONFIG_PREFIX			"fooconfig"
+#elif defined(STANDALONEOA)
+  #define PRODUCT_NAME				"OpenArena"
+  #define BASEGAME					"baseoa"
+  #define CLIENT_WINDOW_TITLE		"OpenArena"
+  #define CLIENT_WINDOW_MIN_TITLE	"oa"
+  #define HOMEPATH_NAME_UNIX_LEGACY	".openarena"
+  #define HOMEPATH_NAME				"OpenArena"
+  #define GAMENAME_FOR_MASTER		"Quake3Arena"
+  #define CINEMATICS_LOGO		"idlogo.roq"
+  #define CINEMATICS_INTRO		"intro.roq"
+  #define LEGACY_PROTOCOL
+  #define CONFIG_PREFIX			"oaconfig"
 #else
   #define PRODUCT_NAME				"ioq3"
   #define BASEGAME					"baseq3"
@@ -409,7 +421,15 @@ qboolean Q_IsColorString(const char *p);  // ^[0-9a-zA-Z]
 #define COLOR_CYAN	'5'
 #define COLOR_MAGENTA	'6'
 #define COLOR_WHITE	'7'
+#ifdef STANDALONEOA
+// OA adds ^8 (orange), as in the OpenArena engines.
+#define NUMBER_OF_COLORS 9
+#define COLOR_MENU	'8'
+#define ColorIndexForNumber(c) ((c) % NUMBER_OF_COLORS)
+#else
+#define NUMBER_OF_COLORS 8
 #define ColorIndexForNumber(c) ((c) & 0x07)
+#endif
 #define ColorIndex(c) (ColorIndexForNumber((c) - '0'))
 
 #define S_COLOR_BLACK	"^0"
@@ -420,8 +440,11 @@ qboolean Q_IsColorString(const char *p);  // ^[0-9a-zA-Z]
 #define S_COLOR_CYAN	"^5"
 #define S_COLOR_MAGENTA	"^6"
 #define S_COLOR_WHITE	"^7"
+#ifdef STANDALONEOA
+#define S_COLOR_MENU	"^8"
+#endif
 
-extern vec4_t	g_color_table[8];
+extern vec4_t	g_color_table[NUMBER_OF_COLORS];
 
 #define	MAKERGB( v, r, g, b ) v[0]=r;v[1]=g;v[2]=b
 #define	MAKERGBA( v, r, g, b, a ) v[0]=r;v[1]=g;v[2]=b;v[3]=a
@@ -818,6 +841,9 @@ char	*Q_strupr( char *s1 );
 const char	*Q_stristr( const char *s, const char *find);
 
 // buffer size safe library replacements
+#ifdef STANDALONEOA
+char	*Q_strncpy( char *strDest, const char *strSource, size_t count );
+#endif
 void	Q_strncpyz( char *dest, const char *src, int destsize );
 void	Q_strcat( char *dest, int size, const char *src );
 

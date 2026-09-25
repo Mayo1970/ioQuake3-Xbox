@@ -4126,7 +4126,7 @@ void FS_InitFilesystem( void ) {
 	// try to start up normally
 	FS_Startup(com_basegame->string);
 
-#ifndef STANDALONE
+#if !defined(STANDALONE) && !defined(STANDALONEOA)
 	FS_CheckPak0( );
 #endif
 
@@ -4164,7 +4164,7 @@ void FS_Restart( int checksumFeed ) {
 	// try to start up normally
 	FS_Startup(com_basegame->string);
 
-#ifndef STANDALONE
+#if !defined(STANDALONE) && !defined(STANDALONEOA)
 	FS_CheckPak0( );
 #endif
 

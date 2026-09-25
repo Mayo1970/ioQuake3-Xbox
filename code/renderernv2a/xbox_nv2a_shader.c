@@ -181,10 +181,12 @@ static int XboxShaderRoundDownPowerOfTwo(int value)
 	return result;
 }
 
-static void XboxShaderReadImage(const char *base, const char *extension,
-	byte **pic, int *width, int *height)
+/* Returns qtrue when libjpeg already decoded at half size (only asked for with half). */
+static qboolean XboxShaderReadImage(const char *base, const char *extension,
+	byte **pic, int *width, int *height, qboolean half)
 {
 	char path[MAX_QPATH];
+	qboolean halved = qfalse;
 
 	Com_sprintf(path, sizeof(path), "%s.%s", base, extension);
 	/* DIAGNOSTIC trace for the post-ui.qvm crash; remove once it is found. */
@@ -193,15 +195,20 @@ static void XboxShaderReadImage(const char *base, const char *extension,
 	/* DIAGNOSTIC bisection switch: never run libjpeg. */
 	if (!Q_stricmp(extension, "jpg")) {
 		*pic = NULL;
-		return;
+		return qfalse;
 	}
 #endif
-	if (!Q_stricmp(extension, "jpg"))
-		R_LoadJPG(path, pic, width, height);
-	else
+	if (!Q_stricmp(extension, "jpg")) {
+		if (half)
+			halved = R_LoadJPGHalf(path, pic, width, height);
+		else
+			R_LoadJPG(path, pic, width, height);
+	} else {
 		R_LoadTGA(path, pic, width, height);
-	Sys_XboxLog("Xbox image: %s -> %s %dx%d\n", path, *pic ? "ok" : "missing",
-		*width, *height);
+	}
+	Sys_XboxLog("Xbox image: %s -> %s %dx%d%s\n", path, *pic ? "ok" : "missing",
+		*width, *height, halved ? " half decode" : "");
+	return halved;
 }
 
 /* ioq3 rounds non-power-of-two images down (r_roundImagesDown); NV2A swizzle needs it. */
@@ -217,6 +224,13 @@ static int XboxShaderLoadImage(const char *name, qboolean picmip, qboolean mipma
 	int image;
 	int x, y;
 	int i;
+	qboolean halved;
+#ifdef STANDALONEOA
+	/* OA's 1024 JPG skies need 4 MiB to decode; picmip'd JPGs decode at half size instead. */
+	qboolean half = picmip && XBOX_NV2A_PICMIP > 0;
+#else
+	qboolean half = qfalse;
+#endif
 
 	if (!Q_stricmp(name, "*white") || !Q_stricmp(name, "$whiteimage"))
 		return XBOX_NV2A_WHITE_IMAGE;
@@ -226,13 +240,13 @@ static int XboxShaderLoadImage(const char *name, qboolean picmip, qboolean mipma
 		return image;
 
 	if (!Q_stricmp(extension, "jpg")) {
-		XboxShaderReadImage(base, "jpg", &pic, &width, &height);
+		halved = XboxShaderReadImage(base, "jpg", &pic, &width, &height, half);
 		if (!pic)
-			XboxShaderReadImage(base, "tga", &pic, &width, &height);
+			halved = XboxShaderReadImage(base, "tga", &pic, &width, &height, half);
 	} else {
-		XboxShaderReadImage(base, "tga", &pic, &width, &height);
+		halved = XboxShaderReadImage(base, "tga", &pic, &width, &height, half);
 		if (!pic)
-			XboxShaderReadImage(base, "jpg", &pic, &width, &height);
+			halved = XboxShaderReadImage(base, "jpg", &pic, &width, &height, half);
 	}
 	if (!pic || width <= 0 || height <= 0) {
 		if (pic)
@@ -242,6 +256,11 @@ static int XboxShaderLoadImage(const char *name, qboolean picmip, qboolean mipma
 
 	scaledWidth = XboxShaderRoundDownPowerOfTwo(width);
 	scaledHeight = XboxShaderRoundDownPowerOfTwo(height);
+	/* A half decode is the first picmip step; keep the size cap the full path applies before it. */
+	if (halved && scaledWidth > XBOX_NV2A_MAX_TEXTURE_SIZE / 2)
+		scaledWidth = XBOX_NV2A_MAX_TEXTURE_SIZE / 2;
+	if (halved && scaledHeight > XBOX_NV2A_MAX_TEXTURE_SIZE / 2)
+		scaledHeight = XBOX_NV2A_MAX_TEXTURE_SIZE / 2;
 	if (scaledWidth != width || scaledHeight != height) {
 		scaled = (byte *)malloc((size_t)scaledWidth * scaledHeight * 4);
 		if (!scaled) {
@@ -259,7 +278,7 @@ static int XboxShaderLoadImage(const char *name, qboolean picmip, qboolean mipma
 			}
 		}
 	}
-	for (i = 0; picmip && i < XBOX_NV2A_PICMIP; ++i)
+	for (i = halved ? 1 : 0; picmip && i < XBOX_NV2A_PICMIP; ++i)
 		XboxNV2A_HalveImage(scaled ? scaled : pic, &scaledWidth, &scaledHeight);
 	/* nopicmip world images stay 16-bit, like the 2D and model ones. */
 	image = XboxNV2A_CreateImage(base, scaledWidth, scaledHeight, scaled ? scaled : pic,
@@ -827,8 +846,14 @@ static qhandle_t XboxShaderRegister(const char *name, int flavor,
 	xboxNV2AShaderDef_t def;
 	xboxShaderText_t *script;
 	qhandle_t handle;
+#ifdef STANDALONEOA
+	/* OA's 512 model skins overflow the pool at 16-bit, so models go to DXT1 too; alpha stays 16-bit. */
+	qboolean compress = flavor == XBOX_NV2A_SHADER_LIGHTMAP || flavor == XBOX_NV2A_SHADER_VERTEX ||
+		flavor == XBOX_NV2A_SHADER_MODEL;
+#else
 	/* Only world textures go to DXT1; 2D and model art keep 16-bit detail. */
 	qboolean compress = flavor == XBOX_NV2A_SHADER_LIGHTMAP || flavor == XBOX_NV2A_SHADER_VERTEX;
+#endif
 
 	if (!name || !*name)
 		return 0;

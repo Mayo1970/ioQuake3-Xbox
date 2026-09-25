@@ -417,7 +417,12 @@ void CL_SystemInfoChanged( void ) {
 			{
 #ifndef STANDALONE
 				if(Q_stricmp(key, "g_synchronousClients") && Q_stricmp(key, "pmove_fixed") &&
-				   Q_stricmp(key, "pmove_msec"))
+				   Q_stricmp(key, "pmove_msec")
+#ifdef STANDALONEOA
+				   // OA engine: unlagged OA mods also need sv_fps.
+				   && Q_stricmp(key, "sv_fps")
+#endif
+				   )
 #endif
 				{
 					Com_Printf(S_COLOR_YELLOW "WARNING: server is not allowed to set %s=%s\n", key, value);

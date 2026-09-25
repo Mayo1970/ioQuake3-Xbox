@@ -840,10 +840,26 @@ int Q_vsnprintf(char *str, size_t size, const char *format, va_list ap)
 }
 #endif
 
+#ifdef STANDALONEOA
+// OA engine fix: bg_lib's forward copy, defined when source and destination overlap.
+char *Q_strncpy( char *strDest, const char *strSource, size_t count ) {
+	char *s = strDest;
+
+	while ( *strSource && count ) {
+		*s++ = *strSource++;
+		count--;
+	}
+	while ( count-- ) {
+		*s++ = 0;
+	}
+	return strDest;
+}
+#endif
+
 /*
 =============
 Q_strncpyz
- 
+
 Safe strncpy that ensures a trailing zero
 =============
 */
@@ -858,7 +874,11 @@ void Q_strncpyz( char *dest, const char *src, int destsize ) {
 		Com_Error(ERR_FATAL,"Q_strncpyz: destsize < 1" ); 
 	}
 
+#ifdef STANDALONEOA
+	Q_strncpy( dest, src, destsize-1 );
+#else
 	strncpy( dest, src, destsize-1 );
+#endif
   dest[destsize-1] = 0;
 }
                  
