@@ -235,6 +235,11 @@ static unsigned int xboxNV2APushedDwords;
 static XguMatrix4x4 xboxNV2AScreenMatrix;
 static int xboxNV2AWidth;
 static int xboxNV2AHeight;
+/* TV overscan: the frame is scaled into the xb_* rectangle; the engine still sees the full size. */
+static float xboxNV2AScreenScaleX = 1.0f;
+static float xboxNV2AScreenScaleY = 1.0f;
+static float xboxNV2AScreenX;
+static float xboxNV2AScreenY;
 static qboolean xboxNV2AInitialized;
 static qboolean xboxNV2AInFrame;
 static qboolean xboxNV2ADebugScreen;
@@ -270,6 +275,12 @@ static cvar_t *xboxNV2AFastSky;
 static cvar_t *xboxNV2ADynamicLight;
 static cvar_t *xboxNV2AMultitexture;
 static cvar_t *xboxNV2ASwapInterval;
+static cvar_t *xboxNV2AFlickerFilter;
+static cvar_t *xboxNV2ASoftenFilter;
+static cvar_t *xboxNV2AXOffset;
+static cvar_t *xboxNV2AYOffset;
+static cvar_t *xboxNV2AXStretch;
+static cvar_t *xboxNV2AYStretch;
 /* pbkit vblank counts at which the last two queued flips show; pbkit shows one per vblank. */
 static DWORD xboxNV2AFlipShow[2];
 static unsigned int xboxNV2AFlipsQueued;
@@ -601,12 +612,20 @@ static void XboxNV2AApplyStageState(const xboxNV2AStage_t *stage, int imageIndex
 
 static void XboxNV2ASetTransform(const XguVec4 *rows, qboolean identity)
 {
+	XguVec4 screen[4];
 	uint32_t *p;
+	int i;
 
+	/* Overscan scale and offset in screen space, times clip w so the divide keeps the offset. */
+	for (i = 0; i < 4; ++i) {
+		screen[i] = rows[i];
+		screen[i].f[0] = rows[i].f[0] * xboxNV2AScreenScaleX + rows[i].f[3] * xboxNV2AScreenX;
+		screen[i].f[1] = rows[i].f[1] * xboxNV2AScreenScaleY + rows[i].f[3] * xboxNV2AScreenY;
+	}
 	XboxNV2AReserve(24);
 	p = pb_begin();
 	p = xgu_set_transform_constant_load(p, 96);
-	p = xgu_set_transform_constant(p, rows, 4);
+	p = xgu_set_transform_constant(p, screen, 4);
 	pb_end(p);
 	xboxNV2ATransformIdentity = identity;
 	/* Row vectors: clip w is the dot product of (x, y, z, 1) with column 3. */
@@ -2223,6 +2242,20 @@ static void XboxNV2ASetFrameState(void)
 	uint32_t *p;
 	int i;
 
+	/* The HAL only calls the encoder when the value changes. */
+	Cvar_CheckRange(xboxNV2AFlickerFilter, 0, 5, qtrue);
+	Cvar_CheckRange(xboxNV2ASoftenFilter, 0, 1, qtrue);
+	XVideoSetFlickerFilter(xboxNV2AFlickerFilter->integer);
+	XVideoSetSoftenFilter(xboxNV2ASoftenFilter->integer != 0);
+	Cvar_CheckRange(xboxNV2AXOffset, -xboxNV2AWidth / 2, xboxNV2AWidth / 2, qtrue);
+	Cvar_CheckRange(xboxNV2AYOffset, -xboxNV2AHeight / 2, xboxNV2AHeight / 2, qtrue);
+	Cvar_CheckRange(xboxNV2AXStretch, -xboxNV2AWidth / 2, xboxNV2AWidth / 2, qtrue);
+	Cvar_CheckRange(xboxNV2AYStretch, -xboxNV2AHeight / 2, xboxNV2AHeight / 2, qtrue);
+	xboxNV2AScreenScaleX = (float)(xboxNV2AWidth + xboxNV2AXStretch->integer) / xboxNV2AWidth;
+	xboxNV2AScreenScaleY = (float)(xboxNV2AHeight + xboxNV2AYStretch->integer) / xboxNV2AHeight;
+	xboxNV2AScreenX = (float)xboxNV2AXOffset->integer;
+	xboxNV2AScreenY = (float)xboxNV2AYOffset->integer;
+
 	XboxNV2AReserve(64 + (XGU_ATTRIBUTE_COUNT + 3) * 4);
 	xgux_set_clear_rect(0, 0, (unsigned int)xboxNV2AWidth,
 		(unsigned int)xboxNV2AHeight);
@@ -2336,6 +2369,14 @@ qboolean XboxNV2A_Init(void)
 	xboxNV2AMultitexture = Cvar_Get("r_ext_multitexture", "1", CVAR_ARCHIVE);
 	/* ioq3's cvar and default: 0 no vblank wait, 1 a wait per frame, N shows each frame N vblanks. */
 	xboxNV2ASwapInterval = Cvar_Get("r_swapInterval", "0", CVAR_ARCHIVE);
+	/* TV encoder filters, same names and defaults as the old Xbox Q3 port; read each frame. */
+	xboxNV2AFlickerFilter = Cvar_Get("xb_flickerfilter", "5", CVAR_ARCHIVE);
+	xboxNV2ASoftenFilter = Cvar_Get("xb_softenfilter", "1", CVAR_ARCHIVE);
+	/* Old port's overscan cvars: image at (offset) sized (screen + stretch) pixels; 20 px border. */
+	xboxNV2AXOffset = Cvar_Get("xb_xoffset", "20", CVAR_ARCHIVE);
+	xboxNV2AYOffset = Cvar_Get("xb_yoffset", "20", CVAR_ARCHIVE);
+	xboxNV2AXStretch = Cvar_Get("xb_xstretch", "-40", CVAR_ARCHIVE);
+	xboxNV2AYStretch = Cvar_Get("xb_ystretch", "-40", CVAR_ARCHIVE);
 	xboxNV2AInitialized = qtrue;
 	XboxNV2AResetTextures();
 	xboxNV2ADebugScreen = qfalse;
@@ -3858,7 +3899,7 @@ static void XboxNV2ARenderView(const refdef_t *fd, const vec3_t pvsOrigin)
 	/* ioq3 r_fastsky: a black clear instead of the sky, and no portal views at 1. */
 	qboolean fastSky = world && xboxNV2AFastSky && xboxNV2AFastSky->integer;
 	int first = xboxNV2ADrawSurfCount;
-	int worldSurfaces, signature, split, x, y, w, h, i;
+	int worldSurfaces, signature, split, x, y, w, h, x0, y0, x1, y1, i;
 	uint32_t *p;
 
 	xboxNV2ASkyCount = 0;
@@ -3902,6 +3943,15 @@ static void XboxNV2ARenderView(const refdef_t *fd, const vec3_t pvsOrigin)
 	y = fd->y < 0 ? 0 : fd->y;
 	w = (fd->x + fd->width > xboxNV2AWidth ? xboxNV2AWidth : fd->x + fd->width) - x;
 	h = (fd->y + fd->height > xboxNV2AHeight ? xboxNV2AHeight : fd->y + fd->height) - y;
+	/* Same overscan mapping as XboxNV2ASetTransform, kept inside the surface. */
+	x0 = (int)(x * xboxNV2AScreenScaleX + xboxNV2AScreenX + 0.5f);
+	y0 = (int)(y * xboxNV2AScreenScaleY + xboxNV2AScreenY + 0.5f);
+	x1 = (int)((x + w) * xboxNV2AScreenScaleX + xboxNV2AScreenX + 0.5f);
+	y1 = (int)((y + h) * xboxNV2AScreenScaleY + xboxNV2AScreenY + 0.5f);
+	x = x0 < 0 ? 0 : x0;
+	y = y0 < 0 ? 0 : y0;
+	w = (x1 > xboxNV2AWidth ? xboxNV2AWidth : x1) - x;
+	h = (y1 > xboxNV2AHeight ? xboxNV2AHeight : y1) - y;
 	if (w > 0 && h > 0) {
 		XboxNV2AReserve(20);
 		xgux_set_clear_rect((unsigned int)x, (unsigned int)y, (unsigned int)w,
