@@ -16,6 +16,8 @@ XBE_TITLE = "Open Arena"
 OUTPUT_DIR = build_xbox_oa
 FLAVOR_DEFINES = -DSTANDALONEOA
 XBOX_ICON = $(CURDIR)/icons/oa/TitleImage.xbx
+# Dashboards cache icons by Title ID; the cxbe default 0xFFFF0002 shows the q3 icon.
+XBOX_TITLEID = 4F410001
 else ifeq ($(TA),1)
 FLAVOR = ta
 XBE_TITLE = "ioQuake3 Team Arena"
@@ -244,10 +246,12 @@ include $(NXDK_DIR)/Makefile
 
 # cxbe cannot write $$XTIMAGE (dashboard icon) or clear the 64 MB flag; patch both after every link.
 $(OUTPUT_DIR)/.xbe_icon: $(OUTPUT_DIR)/default.xbe $(XBOX_ICON) \
-	$(CURDIR)/tools/xbe_add_icon.py $(CURDIR)/tools/xbe_clear_limit64.py
+	$(CURDIR)/tools/xbe_add_icon.py $(CURDIR)/tools/xbe_clear_limit64.py \
+	$(CURDIR)/tools/xbe_set_titleid.py
 	@echo "[ ICON     ] $(OUTPUT_DIR)/default.xbe"
 	$(VE)python3 $(CURDIR)/tools/xbe_add_icon.py $(OUTPUT_DIR)/default.xbe $(XBOX_ICON)
 	$(VE)python3 $(CURDIR)/tools/xbe_clear_limit64.py $(OUTPUT_DIR)/default.xbe
+	$(if $(XBOX_TITLEID),$(VE)python3 $(CURDIR)/tools/xbe_set_titleid.py $(OUTPUT_DIR)/default.xbe $(XBOX_TITLEID))
 	@touch $@
 all: $(OUTPUT_DIR)/.xbe_icon
 

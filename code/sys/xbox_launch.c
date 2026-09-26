@@ -51,23 +51,27 @@ void Sys_XboxAppendLaunchCommands(char *commandLine, int size)
 	char commands[XBOX_LAUNCH_COMMANDS];
 	int i;
 
-	if (XGetLaunchInfo(&type, &data) != 0 || type != LDT_TITLE ||
-		memcmp(data, XBOX_LAUNCH_MAGIC, sizeof(XBOX_LAUNCH_MAGIC)) != 0)
+	/* With no page, this allocates one at boot; a hand-over page allocated after shutdown froze TA. */
+	if (XGetLaunchInfo(&type, &data) != 0)
 		return;
 
-	Q_strncpyz(commands, (const char *)data + sizeof(XBOX_LAUNCH_MAGIC), sizeof(commands));
-	for (i = 0; commands[i]; i++)
+	if (type == LDT_TITLE && !memcmp(data, XBOX_LAUNCH_MAGIC, sizeof(XBOX_LAUNCH_MAGIC)))
 	{
-		if (commands[i] < ' ' || commands[i] > '~')
+		Q_strncpyz(commands, (const char *)data + sizeof(XBOX_LAUNCH_MAGIC), sizeof(commands));
+		for (i = 0; commands[i]; i++)
 		{
-			commands[0] = '\0';
-			break;
+			if (commands[i] < ' ' || commands[i] > '~')
+			{
+				commands[0] = '\0';
+				break;
+			}
 		}
+		Q_strcat(commandLine, size, commands);
+		Sys_XboxLog("Xbox launch data:%s\n", commands);
 	}
-	Q_strcat(commandLine, size, commands);
-	Sys_XboxLog("Xbox launch data:%s\n", commands);
 
-	/* The page survives quick reboots; point it at the dashboard so quit cannot relaunch this XBE. */
+	/* Quit's quick reboot reads this page; an unpersisted empty one crashed Q3, so point it at the dashboard. */
+	MmPersistContiguousMemory(LaunchDataPage, sizeof(*LaunchDataPage), TRUE);
 	LaunchDataPage->Header.dwLaunchDataType = LDT_LAUNCH_DASHBOARD;
 	LaunchDataPage->Header.szLaunchPath[0] = '\0';
 	memset(LaunchDataPage->LaunchData, 0, sizeof(LaunchDataPage->LaunchData));
