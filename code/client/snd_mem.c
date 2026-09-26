@@ -31,6 +31,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "snd_local.h"
 #include "snd_codec.h"
+#ifdef XBOX
+#include "../sys/sys_xbox.h"
+#endif
 
 #define DEF_COMSOUNDMEGS "8"
 
@@ -51,6 +54,21 @@ short *sfxScratchBuffer = NULL;
 sfx_t *sfxScratchPointer = NULL;
 int	   sfxScratchIndex = 0;
 
+#ifdef XBOX
+// inUse counts the free chunk bytes
+static int xboxSoundLowestFree = 0x7fffffff;
+
+void SND_XboxFreeMemory( int *freeBytes, int *lowestFree ) {
+	if ( !buffer ) {
+		*freeBytes = *lowestFree = -1;
+		return;
+	}
+	*freeBytes = inUse;
+	*lowestFree = xboxSoundLowestFree < inUse ? xboxSoundLowestFree : inUse;
+	xboxSoundLowestFree = inUse;
+}
+#endif
+
 void	SND_free(sndBuffer *v) {
 	*(sndBuffer **)v = freelist;
 	freelist = (sndBuffer*)v;
@@ -67,6 +85,11 @@ redo:
 
 	inUse -= sizeof(sndBuffer);
 	totalInUse += sizeof(sndBuffer);
+#ifdef XBOX
+	if ( inUse < xboxSoundLowestFree ) {
+		xboxSoundLowestFree = inUse;
+	}
+#endif
 
 	v = freelist;
 	freelist = *(sndBuffer **)freelist;

@@ -286,7 +286,11 @@ typedef enum {
 	XBOX_NV2A_IMAGE_16BIT,
 	XBOX_NV2A_IMAGE_32BIT,
 	/* Opaque images of 4x4 texels or more; others fall back to 16-bit. */
-	XBOX_NV2A_IMAGE_DXT1
+	XBOX_NV2A_IMAGE_DXT1,
+	/* DXT1 when opaque, DXT5 with alpha; sides under 4 fall back to 16-bit. */
+	XBOX_NV2A_IMAGE_DXT,
+	/* What XBOX_NV2A_IMAGE_DXT becomes for an image with alpha. */
+	XBOX_NV2A_IMAGE_DXT5
 } xboxNV2AImageStorage_t;
 
 qboolean XboxNV2A_Init(void);
@@ -299,9 +303,9 @@ void XboxNV2A_BeginFrame(stereoFrame_t stereoFrame);
 void XboxNV2A_EndFrame(int *frontEndMsec, int *backEndMsec);
 void XboxNV2A_SetColor(const float *rgba);
 int XboxNV2A_FindImage(const char *name);
-/* mipmap adds the box-filtered chain; a DXT1 chain stops at 4x4. */
+/* mipmap adds the box-filtered chain, halving rgba in place; a DXT chain stops at 4x4. */
 int XboxNV2A_CreateImage(const char *name, int width, int height,
-	const byte *rgba, int storage, qboolean mipmap);
+	byte *rgba, int storage, qboolean mipmap);
 /* ioq3 R_MipMap box filter, in place; a 1-texel side stays 1 texel. */
 void XboxNV2A_HalveImage(byte *pic, int *width, int *height);
 qboolean XboxNV2A_FindShader(const char *name, int flavor, qhandle_t *handle);
@@ -330,6 +334,8 @@ void XboxNV2A_RenderScene(const refdef_t *fd);
 
 /* DXT1 blocks row by row, the NV2A layout; width and height are multiples of 4. */
 void XboxNV2ADxt_Compress(const byte *rgba, int width, int height, void *out);
+/* DXT5 blocks in the same layout: 8 alpha bytes, then a DXT1 colour block. */
+void XboxNV2ADxt_Compress5(const byte *rgba, int width, int height, void *out);
 
 /* Shader scripts and image files, in xbox_nv2a_shader.c. */
 qhandle_t XboxNV2AShader_Register(const char *name, qboolean mipRawImage);

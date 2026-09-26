@@ -211,14 +211,25 @@ static qboolean XboxShaderReadImage(const char *base, const char *extension,
 	return halved;
 }
 
+/* Texel storage by shader flavor and final size; the result goes to XboxNV2A_CreateImage. */
+static int XboxShaderStorage(int flavor, qboolean picmip, int width, int height)
+{
+	/* The 6 MiB pool fills: picmip'd art compresses (2D alpha stays 16-bit), so do big menu images. */
+	if (picmip)
+		return flavor == XBOX_NV2A_SHADER_2D ? XBOX_NV2A_IMAGE_DXT1 : XBOX_NV2A_IMAGE_DXT;
+	if (flavor == XBOX_NV2A_SHADER_2D && width >= 512 && height >= 512)
+		return XBOX_NV2A_IMAGE_DXT;
+	if (flavor == XBOX_NV2A_SHADER_2D && width >= 256 && height >= 256)
+		return XBOX_NV2A_IMAGE_DXT1;
+	return XBOX_NV2A_IMAGE_16BIT;
+}
+
 /* ioq3 rounds non-power-of-two images down (r_roundImagesDown); NV2A swizzle needs it. */
-static int XboxShaderLoadImage(const char *name, qboolean picmip, qboolean mipmap,
-	qboolean compress)
+static int XboxShaderLoadImage(const char *name, qboolean picmip, qboolean mipmap, int flavor)
 {
 	char base[MAX_QPATH];
 	const char *extension = COM_GetExtension(name);
 	byte *pic = NULL;
-	byte *scaled = NULL;
 	int width = 0, height = 0;
 	int scaledWidth, scaledHeight;
 	int image;
@@ -261,29 +272,23 @@ static int XboxShaderLoadImage(const char *name, qboolean picmip, qboolean mipma
 		scaledWidth = XBOX_NV2A_MAX_TEXTURE_SIZE / 2;
 	if (halved && scaledHeight > XBOX_NV2A_MAX_TEXTURE_SIZE / 2)
 		scaledHeight = XBOX_NV2A_MAX_TEXTURE_SIZE / 2;
+	/* In place: sizes only shrink, so the source offset never falls behind the destination. */
 	if (scaledWidth != width || scaledHeight != height) {
-		scaled = (byte *)malloc((size_t)scaledWidth * scaledHeight * 4);
-		if (!scaled) {
-			ri.Free(pic);
-			return 0;
-		}
 		for (y = 0; y < scaledHeight; ++y) {
 			int sourceY = y * height / scaledHeight;
 
 			for (x = 0; x < scaledWidth; ++x) {
 				int sourceX = x * width / scaledWidth;
 
-				memcpy(scaled + ((size_t)y * scaledWidth + x) * 4,
+				memmove(pic + ((size_t)y * scaledWidth + x) * 4,
 					pic + ((size_t)sourceY * width + sourceX) * 4, 4);
 			}
 		}
 	}
 	for (i = halved ? 1 : 0; picmip && i < XBOX_NV2A_PICMIP; ++i)
-		XboxNV2A_HalveImage(scaled ? scaled : pic, &scaledWidth, &scaledHeight);
-	/* nopicmip world images stay 16-bit, like the 2D and model ones. */
-	image = XboxNV2A_CreateImage(base, scaledWidth, scaledHeight, scaled ? scaled : pic,
-		compress && picmip ? XBOX_NV2A_IMAGE_DXT1 : XBOX_NV2A_IMAGE_16BIT, mipmap);
-	free(scaled);
+		XboxNV2A_HalveImage(pic, &scaledWidth, &scaledHeight);
+	image = XboxNV2A_CreateImage(base, scaledWidth, scaledHeight, pic,
+		XboxShaderStorage(flavor, picmip, scaledWidth, scaledHeight), mipmap);
 	ri.Free(pic);
 	return image;
 }
@@ -459,7 +464,7 @@ static void XboxShaderParseAlphaGen(char **text, xboxNV2AStage_t *stage,
 
 /* Reads one stage up to its closing brace; qfalse if the stage cannot be drawn. */
 static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage,
-	xboxNV2AShaderDef_t *def, qboolean picmip, qboolean mipmap, qboolean compress)
+	xboxNV2AShaderDef_t *def, qboolean picmip, qboolean mipmap, int flavor)
 {
 	char maps[XBOX_NV2A_MAX_ANIM_IMAGES][MAX_QPATH];
 	int numMaps = 0;
@@ -568,7 +573,7 @@ static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage,
 		return qtrue;
 	}
 	for (i = 0; i < numMaps; ++i) {
-		int image = XboxShaderLoadImage(maps[i], picmip, mipmap, compress);
+		int image = XboxShaderLoadImage(maps[i], picmip, mipmap, flavor);
 
 		if (image)
 			stage->images[stage->numImages++] = image;
@@ -578,7 +583,7 @@ static qboolean XboxShaderParseStage(char **text, xboxNV2AStage_t *stage,
 
 /* ioq3 ParseSkyParms; a missing parameter leaves the shader a normal one, as in ioq3. */
 static void XboxShaderParseSkyParms(char **text, xboxNV2AShaderDef_t *def, qboolean mipmap,
-	qboolean compress)
+	int flavor)
 {
 	static const char *suffixes[XBOX_NV2A_SKY_SIDES] = {"rt", "bk", "lf", "ft", "up", "dn"};
 	char box[MAX_QPATH];
@@ -594,7 +599,7 @@ static void XboxShaderParseSkyParms(char **text, xboxNV2AShaderDef_t *def, qbool
 			char path[MAX_QPATH];
 
 			Com_sprintf(path, sizeof(path), "%s_%s.tga", box, suffixes[i]);
-			def->skyBox[i] = XboxShaderLoadImage(path, qtrue, mipmap, compress);
+			def->skyBox[i] = XboxShaderLoadImage(path, qtrue, mipmap, flavor);
 		}
 	}
 	token = COM_ParseExt(text, qfalse);
@@ -675,7 +680,7 @@ static float XboxShaderParseSort(const char *token)
 	return atof(token);
 }
 
-static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def, qboolean compress)
+static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def, int flavor)
 {
 	char *p = body;
 	qboolean sortSet = qfalse;
@@ -690,7 +695,7 @@ static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def, qboolean compr
 		if (!strcmp(token, "{")) {
 			if (def->numStages < XBOX_NV2A_MAX_STAGES) {
 				if (XboxShaderParseStage(&p, &def->stages[def->numStages], def, picmip,
-					mipmap, compress))
+					mipmap, flavor))
 					def->numStages++;
 			} else if (!SkipBracedSection(&p, 1)) {
 				break;
@@ -705,7 +710,7 @@ static void XboxShaderParse(char *body, xboxNV2AShaderDef_t *def, qboolean compr
 			continue;
 		}
 		if (!Q_stricmp(token, "skyParms")) {
-			XboxShaderParseSkyParms(&p, def, mipmap, compress);
+			XboxShaderParseSkyParms(&p, def, mipmap, flavor);
 			continue;
 		}
 		if (!Q_stricmp(token, "cull")) {
@@ -797,10 +802,10 @@ static void XboxShaderFinishFog(xboxNV2AShaderDef_t *def)
 
 /* ioq3 R_FindShader defaults for LIGHTMAP_2D, LIGHTMAP_NONE, lightmapped and vertex-lit. */
 static void XboxShaderImplicit(const char *name, int flavor,
-	qboolean mipRawImage, qboolean compress, xboxNV2AShaderDef_t *def)
+	qboolean mipRawImage, xboxNV2AShaderDef_t *def)
 {
 	xboxNV2AStage_t *stage = &def->stages[0];
-	int image = XboxShaderLoadImage(name, mipRawImage, mipRawImage, compress);
+	int image = XboxShaderLoadImage(name, mipRawImage, mipRawImage, flavor);
 
 	def->sort = XBOX_NV2A_SORT_OPAQUE;
 	if (!image)
@@ -846,14 +851,6 @@ static qhandle_t XboxShaderRegister(const char *name, int flavor,
 	xboxNV2AShaderDef_t def;
 	xboxShaderText_t *script;
 	qhandle_t handle;
-#ifdef STANDALONEOA
-	/* OA's 512 model skins overflow the pool at 16-bit, so models go to DXT1 too; alpha stays 16-bit. */
-	qboolean compress = flavor == XBOX_NV2A_SHADER_LIGHTMAP || flavor == XBOX_NV2A_SHADER_VERTEX ||
-		flavor == XBOX_NV2A_SHADER_MODEL;
-#else
-	/* Only world textures go to DXT1; 2D and model art keep 16-bit detail. */
-	qboolean compress = flavor == XBOX_NV2A_SHADER_LIGHTMAP || flavor == XBOX_NV2A_SHADER_VERTEX;
-#endif
 
 	if (!name || !*name)
 		return 0;
@@ -869,9 +866,9 @@ static qhandle_t XboxShaderRegister(const char *name, int flavor,
 	def.cull = XBOX_NV2A_CULL_FRONT;
 	script = XboxShaderFindText(stripped);
 	if (script)
-		XboxShaderParse(script->body, &def, compress);
+		XboxShaderParse(script->body, &def, flavor);
 	else
-		XboxShaderImplicit(name, flavor, mipRawImage, compress, &def);
+		XboxShaderImplicit(name, flavor, mipRawImage, &def);
 	XboxShaderFinishFog(&def);
 	/* nxdk's vsnprintf has no float conversions, so the sort prints as an integer. */
 	if (def.isSky)

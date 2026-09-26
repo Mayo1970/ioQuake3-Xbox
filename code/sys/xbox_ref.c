@@ -2,6 +2,7 @@
 #include "../qcommon/q_shared.h"
 #include "../renderercommon/tr_public.h"
 #include "../renderernv2a/xbox_nv2a.h"
+#include "sys_xbox.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -11,13 +12,16 @@ refimport_t ri;
 
 static refexport_t xboxRefExport;
 
-/* Decoded images are transient; keep them out of the 8 MiB zone. */
+/* Decoded images are transient; keep them out of the 8 MiB zone. Only the image loaders call this. */
 static void *XboxRefMalloc(int bytes)
 {
 	void *memory = malloc((size_t)(bytes > 0 ? bytes : 1));
 
-	if (!memory)
+	if (!memory) {
+		Sys_XboxMemoryReport("at image decode failure");
 		ri.Error(ERR_DROP, "Xbox ref: out of memory for %d bytes", bytes);
+	}
+	Sys_XboxNoteDecodeMemory();
 	return memory;
 }
 
@@ -56,7 +60,12 @@ static qhandle_t XboxRefRegisterSkin(const char *name)
 	return XboxNV2ASkin_Register(name);
 }
 
-static void XboxRefNoop(void) {}
+/* CL_InitCGame calls this once the map and cgame media are loaded. */
+static void XboxRefEndRegistration(void)
+{
+	Sys_XboxHeapTrim();
+	Sys_XboxMemoryReport("after registration");
+}
 static void XboxRefLoadWorld(const char *name)
 {
 	XboxNV2AWorld_Load(name);
@@ -176,7 +185,7 @@ refexport_t *GetRefAPI(int apiVersion, refimport_t *rimp)
 	xboxRefExport.RegisterShaderNoMip = XboxRefRegisterShaderNoMip;
 	xboxRefExport.LoadWorld = XboxRefLoadWorld;
 	xboxRefExport.SetWorldVisData = XboxRefSetWorldVisData;
-	xboxRefExport.EndRegistration = XboxRefNoop;
+	xboxRefExport.EndRegistration = XboxRefEndRegistration;
 	xboxRefExport.ClearScene = XboxRefClearScene;
 	xboxRefExport.AddRefEntityToScene = XboxRefAddRefEntity;
 	xboxRefExport.AddPolyToScene = XboxRefAddPoly;

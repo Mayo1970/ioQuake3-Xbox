@@ -217,6 +217,7 @@ static size_t xboxNV2ATexturePoolUsed;
 static XboxNV2AImage xboxNV2AImages[XBOX_NV2A_MAX_IMAGES + XBOX_NV2A_MAX_CINEMATICS];
 static unsigned int xboxNV2AImageCount;
 static unsigned int xboxNV2ADxtImageCount;
+static unsigned int xboxNV2ADxt5ImageCount;
 static unsigned int xboxNV2ACollapsedCount;
 static XboxNV2AShader xboxNV2AShaders[XBOX_NV2A_MAX_SHADERS];
 static unsigned int xboxNV2AShaderCount;
@@ -683,6 +684,8 @@ static size_t XboxNV2ALevelBytes(int width, int height, int storage)
 {
 	if (storage == XBOX_NV2A_IMAGE_DXT1)
 		return (size_t)width * (size_t)height / 2;
+	if (storage == XBOX_NV2A_IMAGE_DXT5)
+		return (size_t)width * (size_t)height;
 	return (size_t)width * (size_t)height * (storage == XBOX_NV2A_IMAGE_32BIT ? 4 : 2);
 }
 
@@ -693,6 +696,10 @@ static void XboxNV2AUploadLevel(byte *memory, const byte *rgba, int width, int h
 
 	if (storage == XBOX_NV2A_IMAGE_DXT1) {
 		XboxNV2ADxt_Compress(rgba, width, height, memory);
+		return;
+	}
+	if (storage == XBOX_NV2A_IMAGE_DXT5) {
+		XboxNV2ADxt_Compress5(rgba, width, height, memory);
 		return;
 	}
 	for (y = 0; y < height; ++y) {
@@ -710,17 +717,18 @@ static void XboxNV2AUploadLevel(byte *memory, const byte *rgba, int width, int h
 	}
 }
 
-/* Levels follow each other without padding, as in pbgl; DXT1 stops before a side drops below 4. */
+/* Levels follow each other without padding, as in pbgl; DXT stops before a side drops below 4.
+   Each mip level is halved in place in rgba, so no second buffer is needed. */
 static int XboxNV2AAddImage(const char *name, int width, int height,
-	const byte *rgba, int storage, qboolean mipmap)
+	byte *rgba, int storage, qboolean mipmap)
 {
 	XboxNV2AImage *image;
 	XguTexFormatColor format;
 	qboolean alpha = qfalse;
+	qboolean dxt;
 	size_t textureSize = 0;
 	size_t offset;
 	size_t pixel;
-	byte *scratch = NULL;
 	int levels = 0;
 	int w = width, h = height;
 
@@ -731,10 +739,18 @@ static int XboxNV2AAddImage(const char *name, int width, int height,
 		}
 	}
 	/* DXT1's 1-bit alpha would turn texels black under additive or filter blends. */
-	if (storage == XBOX_NV2A_IMAGE_DXT1 && (alpha || width < 4 || height < 4))
+	if ((storage == XBOX_NV2A_IMAGE_DXT1 || storage == XBOX_NV2A_IMAGE_DXT) &&
+		(width < 4 || height < 4))
 		storage = XBOX_NV2A_IMAGE_16BIT;
+	else if (storage == XBOX_NV2A_IMAGE_DXT1 && alpha)
+		storage = XBOX_NV2A_IMAGE_16BIT;
+	else if (storage == XBOX_NV2A_IMAGE_DXT)
+		storage = alpha ? XBOX_NV2A_IMAGE_DXT5 : XBOX_NV2A_IMAGE_DXT1;
+	dxt = storage == XBOX_NV2A_IMAGE_DXT1 || storage == XBOX_NV2A_IMAGE_DXT5;
 	if (storage == XBOX_NV2A_IMAGE_DXT1)
 		format = XGU_TEXTURE_FORMAT_DXT1;
+	else if (storage == XBOX_NV2A_IMAGE_DXT5)
+		format = XGU_TEXTURE_FORMAT_DXT5;
 	else if (storage == XBOX_NV2A_IMAGE_32BIT)
 		format = alpha ? XGU_TEXTURE_FORMAT_A8R8G8B8_SWIZZLED :
 			XGU_TEXTURE_FORMAT_X8R8G8B8_SWIZZLED;
@@ -744,8 +760,7 @@ static int XboxNV2AAddImage(const char *name, int width, int height,
 	for (;;) {
 		textureSize += XboxNV2ALevelBytes(w, h, storage);
 		levels++;
-		if (!mipmap || (w == 1 && h == 1) ||
-			(storage == XBOX_NV2A_IMAGE_DXT1 && (w < 8 || h < 8)))
+		if (!mipmap || (w == 1 && h == 1) || (dxt && (w < 8 || h < 8)))
 			break;
 		w = w > 1 ? w / 2 : 1;
 		h = h > 1 ? h / 2 : 1;
@@ -756,12 +771,6 @@ static int XboxNV2AAddImage(const char *name, int width, int height,
 		offset + textureSize > XBOX_NV2A_TEXTURE_POOL_BYTES) {
 		Sys_XboxLog("Xbox NV2A: texture pool full, skipped %s\n", name);
 		return 0;
-	}
-	if (levels > 1) {
-		scratch = (byte *)malloc((size_t)(width > 1 ? width / 2 : 1) *
-			(size_t)(height > 1 ? height / 2 : 1) * 4);
-		if (!scratch)
-			levels = 1;
 	}
 
 	image = &xboxNV2AImages[xboxNV2AImageCount];
@@ -776,20 +785,18 @@ static int XboxNV2AAddImage(const char *name, int width, int height,
 		byte *memory = (byte *)image->memory + XboxNV2ALevelBytes(width, height, storage);
 		int level;
 
-		/* Level 1 comes from the caller's texels, the rest from the scratch copy in place. */
 		w = width;
 		h = height;
 		for (level = 1; level < levels; ++level) {
-			XboxNV2AHalve(level == 1 ? rgba : scratch, w, h, scratch);
-			w = w > 1 ? w / 2 : 1;
-			h = h > 1 ? h / 2 : 1;
-			XboxNV2AUploadLevel(memory, scratch, w, h, storage, format);
+			XboxNV2A_HalveImage(rgba, &w, &h);
+			XboxNV2AUploadLevel(memory, rgba, w, h, storage, format);
 			memory += XboxNV2ALevelBytes(w, h, storage);
 		}
-		free(scratch);
 	}
 	if (storage == XBOX_NV2A_IMAGE_DXT1)
 		xboxNV2ADxtImageCount++;
+	else if (storage == XBOX_NV2A_IMAGE_DXT5)
+		xboxNV2ADxt5ImageCount++;
 	/* The GPU must not fetch a WC texture before its upload has completed. */
 	__asm__ __volatile__("sfence" ::: "memory");
 	xboxNV2ATexturePoolUsed = offset + textureSize;
@@ -808,7 +815,7 @@ int XboxNV2A_FindImage(const char *name)
 }
 
 int XboxNV2A_CreateImage(const char *name, int width, int height,
-	const byte *rgba, int storage, qboolean mipmap)
+	byte *rgba, int storage, qboolean mipmap)
 {
 	int index;
 
@@ -1071,7 +1078,7 @@ static int XboxNV2ACreateDlightImage(void)
 
 static void XboxNV2AResetTextures(void)
 {
-	static const byte whitePixel[4] = {255, 255, 255, 255};
+	static byte whitePixel[4] = {255, 255, 255, 255};
 	xboxNV2AShaderDef_t white;
 	unsigned int i;
 
@@ -1088,6 +1095,7 @@ static void XboxNV2AResetTextures(void)
 	xboxNV2AShaderCount = XBOX_NV2A_WHITE_SHADER;
 	xboxNV2ATexturePoolUsed = 0;
 	xboxNV2ADxtImageCount = 0;
+	xboxNV2ADxt5ImageCount = 0;
 	xboxNV2ACollapsedCount = 0;
 	XboxNV2AAddImage("*white", 1, 1, whitePixel, XBOX_NV2A_IMAGE_16BIT, qfalse);
 	xboxNV2AFogImage = XboxNV2ACreateFogImage();
@@ -2397,9 +2405,9 @@ void XboxNV2A_Shutdown(qboolean destroyWindow)
 	if (!xboxNV2AInitialized)
 		return;
 	XboxNV2AWaitIdle("shutdown");
-	Sys_XboxLog("Xbox NV2A: %u images (%u DXT1), %u shaders (%u multitexture), "
+	Sys_XboxLog("Xbox NV2A: %u images (%u DXT1, %u DXT5), %u shaders (%u multitexture), "
 		"%u KiB texture pool used\n", xboxNV2AImageCount, xboxNV2ADxtImageCount,
-		xboxNV2AShaderCount, xboxNV2ACollapsedCount,
+		xboxNV2ADxt5ImageCount, xboxNV2AShaderCount, xboxNV2ACollapsedCount,
 		(unsigned int)(xboxNV2ATexturePoolUsed / 1024));
 	/* The world, models and skins hold shader handles, so all tables reset together. */
 	XboxNV2AWorld_Free();
@@ -2413,6 +2421,9 @@ void XboxNV2A_Shutdown(qboolean destroyWindow)
 	xboxNV2APolyCount = 0;
 	xboxNV2APolyVertCount = 0;
 	xboxNV2ASceneFirstPoly = 0;
+	/* Shader stages and malloc'd models are gone; give whole free heap segments back. */
+	Sys_XboxHeapTrim();
+	Sys_XboxMemoryReport("at renderer shutdown");
 }
 
 void XboxNV2A_Kill(void)

@@ -29,7 +29,8 @@
   /src/code/client/../qcommon/qcommon.h \
   /src/code/client/../qcommon/../qcommon/cm_public.h \
   /src/code/client/../qcommon/../qcommon/qfiles.h \
-  /src/code/client/snd_public.h /src/code/client/snd_codec.h
+  /src/code/client/snd_public.h /src/code/client/snd_codec.h \
+  /src/code/client/../sys/sys_xbox.h
 /src/code/client/snd_local.h:
 /src/code/client/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
@@ -63,3 +64,4 @@
 /src/code/client/../qcommon/../qcommon/qfiles.h:
 /src/code/client/snd_public.h:
 /src/code/client/snd_codec.h:
+/src/code/client/../sys/sys_xbox.h:

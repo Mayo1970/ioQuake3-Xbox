@@ -736,6 +736,20 @@ int Z_AvailableMemory( void ) {
 	return Z_AvailableZoneMemory( mainzone );
 }
 
+#ifdef XBOX
+static int xboxZoneLowestFree = 0x7fffffff;
+
+void Z_XboxFreeMemory( int *freeBytes, int *lowestFree ) {
+	if ( !mainzone ) {
+		*freeBytes = *lowestFree = -1;
+		return;
+	}
+	*freeBytes = Z_AvailableZoneMemory( mainzone );
+	*lowestFree = xboxZoneLowestFree < *freeBytes ? xboxZoneLowestFree : *freeBytes;
+	xboxZoneLowestFree = *freeBytes;
+}
+#endif
+
 void Z_Free( void *ptr ) {
 	memblock_t	*block, *other;
 	memzone_t *zone;
@@ -893,6 +907,11 @@ void *Z_TagMalloc( int size, int tag ) {
 	
 	zone->rover = base->next;	// next allocation will start looking here
 	zone->used += base->size;	//
+#ifdef XBOX
+	if ( zone == mainzone && zone->size - zone->used < xboxZoneLowestFree ) {
+		xboxZoneLowestFree = zone->size - zone->used;
+	}
+#endif
 	
 	base->id = ZONEID;
 

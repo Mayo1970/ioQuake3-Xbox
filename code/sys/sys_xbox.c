@@ -19,10 +19,25 @@
 /* DIAGNOSTIC: 0 flushes every line to find the crash point; restore 250 after. */
 #define XBOX_LOG_FLUSH_MSEC 0
 #define XBOX_FATAL_DISPLAY_MSEC 10000
+/* dlmalloc M_MMAP_THRESHOLD; buffers from 64 KiB up get their own pages, freed to the kernel at once. */
+#define XBOX_MALLOC_MMAP_THRESHOLD_PARAM (-3)
+#define XBOX_MALLOC_MMAP_THRESHOLD (64 * 1024)
+
+/* nxdk's malloc is dlmalloc 2.8.6; it exports these extras without a header. Same layout as its mallinfo. */
+typedef struct {
+	size_t arena, ordblks, smblks, hblks, hblkhd, usmblks, fsmblks, uordblks, fordblks, keepcost;
+} xboxMallinfo_t;
+xboxMallinfo_t dlmallinfo(void);
+int dlmallopt(int param, int value);
+int dlmalloc_trim(size_t pad);
 
 static volatile int xboxExitRequested;
 static FILE *xboxLogFile;
 static DWORD xboxLogLastFlush;
+#ifdef XBOX_DEBUG_LOG
+/* Lowest available physical KiB seen right after an image decode buffer, since the last report. */
+static unsigned int xboxDecodeLowestKiB = ~0u;
+#endif
 static int xboxTimeBase;
 static char xboxBinaryPath[MAX_OSPATH];
 static char xboxHomePath[MAX_OSPATH];
@@ -105,6 +120,51 @@ void Sys_XboxMemoryReport(const char *stage)
 		(unsigned int)(statistics.VirtualMemoryBytesReserved / (1024U * 1024U)),
 		(unsigned int)((statistics.ImagePagesCommitted * 4U) / 1024U),
 		(unsigned int)((statistics.StackPagesCommitted * 4U) / 1024U));
+
+#ifdef XBOX_DEBUG_LOG
+	/* Lowest values are since the previous report; -1 means nothing was measured. */
+	{
+		xboxMallinfo_t heap = dlmallinfo();
+		int zoneFree, zoneLowest, soundFree, soundLowest;
+
+		Z_XboxFreeMemory(&zoneFree, &zoneLowest);
+		SND_XboxFreeMemory(&soundFree, &soundLowest);
+		Sys_XboxLog(
+			"Xbox heap %s: decode lowest=%d KiB heap used=%u KiB free=%u KiB mapped=%u KiB "
+			"zone free=%d KiB lowest=%d KiB sound free=%d KiB lowest=%d KiB hunk free=%d KiB\n",
+			stage ? stage : "",
+			xboxDecodeLowestKiB == ~0u ? -1 : (int)xboxDecodeLowestKiB,
+			(unsigned int)(heap.uordblks / 1024), (unsigned int)(heap.fordblks / 1024),
+			(unsigned int)(heap.hblkhd / 1024), zoneFree < 0 ? -1 : zoneFree / 1024,
+			zoneLowest < 0 ? -1 : zoneLowest / 1024, soundFree < 0 ? -1 : soundFree / 1024,
+			soundLowest < 0 ? -1 : soundLowest / 1024, Hunk_MemoryRemaining() / 1024);
+		xboxDecodeLowestKiB = ~0u;
+	}
+#endif
+}
+
+void Sys_XboxHeapInit(void)
+{
+	dlmallopt(XBOX_MALLOC_MMAP_THRESHOLD_PARAM, XBOX_MALLOC_MMAP_THRESHOLD);
+}
+
+/* dlmalloc keeps freed pages until a whole segment is free and it checks; this checks now. */
+void Sys_XboxHeapTrim(void)
+{
+	dlmalloc_trim(0);
+}
+
+void Sys_XboxNoteDecodeMemory(void)
+{
+#ifdef XBOX_DEBUG_LOG
+	MM_STATISTICS statistics;
+
+	memset(&statistics, 0, sizeof(statistics));
+	statistics.Length = sizeof(statistics);
+	if (MmQueryStatistics(&statistics) == 0 &&
+		(unsigned int)(statistics.AvailablePages * 4U) < xboxDecodeLowestKiB)
+		xboxDecodeLowestKiB = (unsigned int)(statistics.AvailablePages * 4U);
+#endif
 }
 
 /* 0 if the query fails. A 128 MB unit also needs a 128 MB BIOS and the XBE 64 MB flag cleared. */

@@ -19,6 +19,14 @@ void Sys_XboxLogOpen(void);
 void Sys_XboxLog(const char *format, ...);
 void Sys_XboxMemoryReport(const char *stage);
 unsigned int Sys_XboxPhysicalMegs(void);
+/* Heap tuning at boot, and a trim after big frees (map loads, renderer restarts). */
+void Sys_XboxHeapInit(void);
+void Sys_XboxHeapTrim(void);
+/* Samples free physical memory at the image decode peak for the next memory report. */
+void Sys_XboxNoteDecodeMemory(void);
+/* Free bytes now and lowest since the last call, or -1 before the zone or sound memory exists. */
+void Z_XboxFreeMemory(int *freeBytes, int *lowestFree);
+void SND_XboxFreeMemory(int *freeBytes, int *lowestFree);
 void Sys_XboxServerTrace(char *buffer, int size);
 void Sys_XboxDiagFrame(void);
 void Sys_XboxStartWatchdog(void (*report)(const char *tag));

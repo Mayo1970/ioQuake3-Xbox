@@ -1,4 +1,4 @@
-/* Load-time DXT1 encoder for opaque textures, after stb_dxt's PCA endpoints and refinement. */
+/* Load-time DXT1/DXT5 encoder; colour blocks follow stb_dxt's PCA endpoints and refinement. */
 #include "xbox_nv2a.h"
 
 #include <math.h>
@@ -221,6 +221,87 @@ static void XboxDxtCompressBlock(const byte (*texels)[4], uint32_t *out)
 	out[1] = indexes;
 }
 
+/* DXT5 alpha palette: a0 > a1 gives 8 steps, otherwise 6 steps plus exact 0 and 255. */
+static int XboxDxtAlphaIndexes(const byte (*texels)[4], int a0, int a1, uint64_t *indexes)
+{
+	int palette[8];
+	int error = 0;
+	int i, j;
+
+	palette[0] = a0;
+	palette[1] = a1;
+	if (a0 > a1) {
+		for (i = 1; i < 7; ++i)
+			palette[i + 1] = ((7 - i) * a0 + i * a1) / 7;
+	} else {
+		for (i = 1; i < 5; ++i)
+			palette[i + 1] = ((5 - i) * a0 + i * a1) / 5;
+		palette[6] = 0;
+		palette[7] = 255;
+	}
+	*indexes = 0;
+	for (i = 0; i < 16; ++i) {
+		int best = 0;
+		int bestError = 256 * 256;
+
+		for (j = 0; j < 8; ++j) {
+			int d = texels[i][3] - palette[j];
+
+			if (d * d < bestError) {
+				bestError = d * d;
+				best = j;
+			}
+		}
+		error += bestError;
+		*indexes |= (uint64_t)best << (i * 3);
+	}
+	return error;
+}
+
+/* Tries the full range in 8 steps, then the soft values in 6 steps with 0 and 255 kept exact. */
+static void XboxDxtCompressAlpha(const byte (*texels)[4], byte *out)
+{
+	int low = 255, high = 0, innerLow = 255, innerHigh = 0;
+	int a0, a1, i;
+	uint64_t indexes;
+
+	for (i = 0; i < 16; ++i) {
+		int a = texels[i][3];
+
+		if (a < low)
+			low = a;
+		if (a > high)
+			high = a;
+		if (a != 0 && a != 255) {
+			if (a < innerLow)
+				innerLow = a;
+			if (a > innerHigh)
+				innerHigh = a;
+		}
+	}
+	if (innerLow > innerHigh)
+		innerLow = innerHigh = 0;
+	a0 = high;
+	a1 = low;
+	if (high == low) {
+		indexes = 0;
+	} else {
+		int error = XboxDxtAlphaIndexes(texels, high, low, &indexes);
+		uint64_t inner;
+
+		if (error && (low == 0 || high == 255) &&
+			XboxDxtAlphaIndexes(texels, innerLow, innerHigh, &inner) < error) {
+			a0 = innerLow;
+			a1 = innerHigh;
+			indexes = inner;
+		}
+	}
+	out[0] = (byte)a0;
+	out[1] = (byte)a1;
+	for (i = 0; i < 6; ++i)
+		out[2 + i] = (byte)(indexes >> (i * 8));
+}
+
 void XboxNV2ADxt_Compress(const byte *rgba, int width, int height, void *out)
 {
 	byte texels[16][4];
@@ -233,6 +314,24 @@ void XboxNV2ADxt_Compress(const byte *rgba, int width, int height, void *out)
 				memcpy(texels[row * 4], rgba + ((size_t)(y + row) * width + x) * 4, 16);
 			XboxDxtCompressBlock((const byte (*)[4])texels, block);
 			block += 2;
+		}
+	}
+}
+
+/* The colour block is the DXT1 one; it already never uses the 3-colour mode DXT5 lacks. */
+void XboxNV2ADxt_Compress5(const byte *rgba, int width, int height, void *out)
+{
+	byte texels[16][4];
+	byte *block = (byte *)out;
+	int x, y, row;
+
+	for (y = 0; y < height; y += 4) {
+		for (x = 0; x < width; x += 4) {
+			for (row = 0; row < 4; ++row)
+				memcpy(texels[row * 4], rgba + ((size_t)(y + row) * width + x) * 4, 16);
+			XboxDxtCompressAlpha((const byte (*)[4])texels, block);
+			XboxDxtCompressBlock((const byte (*)[4])texels, (uint32_t *)(block + 8));
+			block += 16;
 		}
 	}
 }

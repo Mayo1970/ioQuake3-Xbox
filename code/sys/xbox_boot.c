@@ -45,6 +45,7 @@ int main(void)
 #endif
 		;
 
+	Sys_XboxHeapInit();
 	XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
 	Sys_XboxLogOpen();
 	Sys_XboxLog(XBOX_TITLE "\n");
