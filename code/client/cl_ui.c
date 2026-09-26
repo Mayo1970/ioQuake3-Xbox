@@ -31,11 +31,6 @@ extern	botlib_export_t	*botlib_export;
 
 vm_t *uivm;
 
-/*
-====================
-GetClientState
-====================
-*/
 static void GetClientState( uiClientState_t *state ) {
 	state->connectPacketCount = clc.connectPacketCount;
 	state->connState = clc.state;
@@ -45,11 +40,6 @@ static void GetClientState( uiClientState_t *state ) {
 	state->clientNum = cl.snap.ps.clientNum;
 }
 
-/*
-====================
-LAN_LoadCachedServers
-====================
-*/
 void LAN_LoadCachedServers( void ) {
 	int size;
 	fileHandle_t fileIn;
@@ -70,11 +60,6 @@ void LAN_LoadCachedServers( void ) {
 	}
 }
 
-/*
-====================
-LAN_SaveServersToCache
-====================
-*/
 void LAN_SaveServersToCache( void ) {
 	int size;
 	fileHandle_t fileOut = FS_BaseDir_FOpenFileWrite_HomeState("servercache.dat");
@@ -88,11 +73,6 @@ void LAN_SaveServersToCache( void ) {
 }
 
 
-/*
-====================
-LAN_ResetPings
-====================
-*/
 static void LAN_ResetPings(int source) {
 	int count,i;
 	serverInfo_t *servers = NULL;
@@ -120,11 +100,6 @@ static void LAN_ResetPings(int source) {
 	}
 }
 
-/*
-====================
-LAN_AddServer
-====================
-*/
 static int LAN_AddServer(int source, const char *name, const char *address) {
 	int max, *count, i;
 	netadr_t adr;
@@ -167,11 +142,6 @@ static int LAN_AddServer(int source, const char *name, const char *address) {
 	return -1;
 }
 
-/*
-====================
-LAN_RemoveServer
-====================
-*/
 static void LAN_RemoveServer(int source, const char *addr) {
 	int *count, i;
 	serverInfo_t *servers = NULL;
@@ -209,11 +179,6 @@ static void LAN_RemoveServer(int source, const char *addr) {
 }
 
 
-/*
-====================
-LAN_GetServerCount
-====================
-*/
 static int LAN_GetServerCount( int source ) {
 	switch (source) {
 		case AS_LOCAL :
@@ -230,11 +195,6 @@ static int LAN_GetServerCount( int source ) {
 	return 0;
 }
 
-/*
-====================
-LAN_GetLocalServerAddressString
-====================
-*/
 static void LAN_GetServerAddressString( int source, int n, char *buf, int buflen ) {
 	switch (source) {
 		case AS_LOCAL :
@@ -260,11 +220,6 @@ static void LAN_GetServerAddressString( int source, int n, char *buf, int buflen
 	buf[0] = '\0';
 }
 
-/*
-====================
-LAN_GetServerInfo
-====================
-*/
 static void LAN_GetServerInfo( int source, int n, char *buf, int buflen ) {
 	char info[MAX_STRING_CHARS];
 	serverInfo_t *server = NULL;
@@ -311,11 +266,6 @@ static void LAN_GetServerInfo( int source, int n, char *buf, int buflen ) {
 	}
 }
 
-/*
-====================
-LAN_GetServerPing
-====================
-*/
 static int LAN_GetServerPing( int source, int n ) {
 	serverInfo_t *server = NULL;
 	switch (source) {
@@ -342,11 +292,6 @@ static int LAN_GetServerPing( int source, int n ) {
 	return -1;
 }
 
-/*
-====================
-LAN_GetServerPtr
-====================
-*/
 static serverInfo_t *LAN_GetServerPtr( int source, int n ) {
 	switch (source) {
 		case AS_LOCAL :
@@ -369,11 +314,6 @@ static serverInfo_t *LAN_GetServerPtr( int source, int n ) {
 	return NULL;
 }
 
-/*
-====================
-LAN_CompareServers
-====================
-*/
 static int LAN_CompareServers( int source, int sortKey, int sortDir, int s1, int s2 ) {
 	int res;
 	serverInfo_t *server1, *server2;
@@ -448,47 +388,22 @@ static int LAN_CompareServers( int source, int sortKey, int sortDir, int s1, int
 	return res;
 }
 
-/*
-====================
-LAN_GetPingQueueCount
-====================
-*/
 static int LAN_GetPingQueueCount( void ) {
 	return (CL_GetPingQueueCount());
 }
 
-/*
-====================
-LAN_ClearPing
-====================
-*/
 static void LAN_ClearPing( int n ) {
 	CL_ClearPing( n );
 }
 
-/*
-====================
-LAN_GetPing
-====================
-*/
 static void LAN_GetPing( int n, char *buf, int buflen, int *pingtime ) {
 	CL_GetPing( n, buf, buflen, pingtime );
 }
 
-/*
-====================
-LAN_GetPingInfo
-====================
-*/
 static void LAN_GetPingInfo( int n, char *buf, int buflen ) {
 	CL_GetPingInfo( n, buf, buflen );
 }
 
-/*
-====================
-LAN_MarkServerVisible
-====================
-*/
 static void LAN_MarkServerVisible(int source, int n, qboolean visible ) {
 	if (n == -1) {
 		int count = MAX_OTHER_SERVERS;
@@ -535,11 +450,6 @@ static void LAN_MarkServerVisible(int source, int n, qboolean visible ) {
 }
 
 
-/*
-=======================
-LAN_ServerIsVisible
-=======================
-*/
 static int LAN_ServerIsVisible(int source, int n ) {
 	switch (source) {
 		case AS_LOCAL :
@@ -562,38 +472,18 @@ static int LAN_ServerIsVisible(int source, int n ) {
 	return qfalse;
 }
 
-/*
-=======================
-LAN_UpdateVisiblePings
-=======================
-*/
 qboolean LAN_UpdateVisiblePings(int source ) {
 	return CL_UpdateVisiblePings_f(source);
 }
 
-/*
-====================
-LAN_GetServerStatus
-====================
-*/
 int LAN_GetServerStatus( char *serverAddress, char *serverStatus, int maxLen ) {
 	return CL_ServerStatus( serverAddress, serverStatus, maxLen );
 }
 
-/*
-====================
-CL_GetGlConfig
-====================
-*/
 static void CL_GetGlconfig( glconfig_t *config ) {
 	*config = cls.glconfig;
 }
 
-/*
-====================
-CL_GetClipboardData
-====================
-*/
 static void CL_GetClipboardData( char *buf, int buflen ) {
 	char	*cbd;
 
@@ -609,20 +499,23 @@ static void CL_GetClipboardData( char *buf, int buflen ) {
 	Z_Free( cbd );
 }
 
-/*
-====================
-Key_KeynumToStringBuf
-====================
-*/
 static void Key_KeynumToStringBuf( int keynum, char *buf, int buflen ) {
+#ifdef XBOX
+	/* Menu-only pad names in xboxButtonKeys order; q3config.cfg keeps JOY*
+	   because "bind A" would parse as the keyboard key. */
+	static const char *padNames[] = {
+		"A BUTTON", "B BUTTON", "X BUTTON", "Y BUTTON", "BLACK", "WHITE",
+		"L TRIGGER", "R TRIGGER", "L THUMB", "R THUMB", "BACK"
+	};
+
+	if ( keynum >= K_JOY1 && keynum < K_JOY1 + (int)ARRAY_LEN( padNames ) ) {
+		Q_strncpyz( buf, padNames[keynum - K_JOY1], buflen );
+		return;
+	}
+#endif
 	Q_strncpyz( buf, Key_KeynumToString( keynum ), buflen );
 }
 
-/*
-====================
-Key_GetBindingBuf
-====================
-*/
 static void Key_GetBindingBuf( int keynum, char *buf, int buflen ) {
 	char	*value;
 
@@ -635,11 +528,6 @@ static void Key_GetBindingBuf( int keynum, char *buf, int buflen ) {
 	}
 }
 
-/*
-====================
-CLUI_GetCDKey
-====================
-*/
 static void CLUI_GetCDKey( char *buf, int buflen ) {
 #ifndef STANDALONE
 	const char *gamedir;
@@ -657,11 +545,6 @@ static void CLUI_GetCDKey( char *buf, int buflen ) {
 }
 
 
-/*
-====================
-CLUI_SetCDKey
-====================
-*/
 #ifndef STANDALONE
 static void CLUI_SetCDKey( char *buf ) {
 	const char *gamedir;
@@ -679,11 +562,6 @@ static void CLUI_SetCDKey( char *buf ) {
 }
 #endif
 
-/*
-====================
-GetConfigString
-====================
-*/
 static int GetConfigString(int index, char *buf, int size)
 {
 	int		offset;
@@ -704,24 +582,12 @@ static int GetConfigString(int index, char *buf, int size)
 	return qtrue;
 }
 
-/*
-====================
-FloatAsInt
-====================
-*/
 static int FloatAsInt( float f ) {
 	floatint_t fi;
 	fi.f = f;
 	return fi.i;
 }
 
-/*
-====================
-CL_UISystemCalls
-
-The ui module is making a system call
-====================
-*/
 intptr_t CL_UISystemCalls( intptr_t *args ) {
 	switch( args[0] ) {
 	case UI_ERROR:
@@ -1083,11 +949,6 @@ intptr_t CL_UISystemCalls( intptr_t *args ) {
 	return 0;
 }
 
-/*
-====================
-CL_ShutdownUI
-====================
-*/
 void CL_ShutdownUI( void ) {
 	Key_SetCatcher( Key_GetCatcher( ) & ~KEYCATCH_UI );
 	cls.uiStarted = qfalse;
@@ -1099,11 +960,6 @@ void CL_ShutdownUI( void ) {
 	uivm = NULL;
 }
 
-/*
-====================
-CL_InitUI
-====================
-*/
 #define UI_OLD_API_VERSION	4
 
 void CL_InitUI( void ) {
@@ -1161,13 +1017,7 @@ qboolean UI_usesUniqueCDKey( void ) {
 }
 #endif
 
-/*
-====================
-UI_GameCommand
-
-See if the current console command is claimed by the ui
-====================
-*/
+// Returns qtrue if the ui claimed the current console command
 qboolean UI_GameCommand( void ) {
 	if ( !uivm ) {
 		return qfalse;

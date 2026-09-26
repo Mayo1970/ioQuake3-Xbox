@@ -141,6 +141,23 @@ NXDK_USB_ENABLE_HID = y
 ifeq ($(DEBUG),y)
 NXDK_CFLAGS += -DXBOX_DEBUG_LOG
 endif
+
+ifeq ($(FLAVOR),oa)
+# OA music is Ogg Vorbis (32 kHz stereo); Q3 and TA ship WAV only. Decoder list as in the PS3 port.
+XBOX_OGG_DIR = $(CURDIR)/code/thirdparty/libogg-1.3.6
+XBOX_VORBIS_DIR = $(CURDIR)/code/thirdparty/libvorbis-1.3.7
+XBOX_VORBIS_SRCS = \
+	$(CURDIR)/code/client/snd_codec_ogg.c \
+	$(XBOX_OGG_DIR)/src/bitwise.c $(XBOX_OGG_DIR)/src/framing.c \
+	$(addprefix $(XBOX_VORBIS_DIR)/lib/, mdct.c block.c window.c synthesis.c info.c \
+		floor0.c floor1.c res0.c mapping0.c registry.c codebook.c sharedbook.c \
+		smallft.c vorbisfile.c analysis.c bitrate.c envelope.c lpc.c lsp.c psy.c)
+SRCS += $(XBOX_VORBIS_SRCS)
+NXDK_CFLAGS += -DUSE_CODEC_VORBIS
+$(patsubst %.c,%.obj,$(XBOX_VORBIS_SRCS)): NXDK_CFLAGS += -I$(XBOX_OGG_DIR)/include \
+	-I$(XBOX_VORBIS_DIR)/include -I$(XBOX_VORBIS_DIR)/lib
+endif
+
 SHADER_OBJS = \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a_vp.inl \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a_fp.inl
