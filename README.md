@@ -10,20 +10,6 @@ Three flavors build from the same tree:
 - **Team Arena** (`ta.xbe`, launched from the Q3 menu)
 - **OpenArena** (standalone `default.xbe`)
 
-## Status
-
-- World geometry, textures, sky, models and particles render at 640×480
-- Game, cgame and UI modules are compiled natively into the XBE (no QVM on
-  local games)
-- Sound effects, music and cinematic audio supported
-- Networking: System Link / LAN discovery, internet server browser, hosting,
-  and play
-- Controller, USB keyboard and USB mouse supported (see **Controls** below)
-- Player name defaults to the console's Xbox Live gamertag
-- Custom dashboard icon (tested on UnleashX)
-- Q3DM11 with 4 bots runs at ~45-50 FPS. V-sync is off by default; the frame
-  rate caps at 60.
-
 ## Building
 
 Just use Docker lol
@@ -51,20 +37,7 @@ Requires a softmodded or modchipped Xbox; tested with UnleashX.
 Buy the base game legally [Here](https://www.gog.com/en/game/quake_iii_arena), then copy the `.pk3` files from your
 install/disc into the paths below
 
-File structure:
-
-```
-E:\Games\ioquake3\default.xbe
-E:\Games\ioquake3\ta.xbe                        (optional, Team Arena)
-E:\Games\ioquake3\baseq3\pak0.pk3 ... pak8.pk3
-E:\Games\ioquake3\missionpack\pak0.pk3 ... pak3.pk3  (optional, Team Arena)
-
-E:\Games\openarena\default.xbe
-E:\Games\openarena\baseoa\*.pk3
-```
-
-Any folder works, since the game data is read next to the XBE. OpenArena is
-free and needs its own folder.
+place (Quake III) `baseq3`, (Team Arena) `missionpack` or (Open Arena) `baseoa` besides the respective xbe. Quake 3 and Team Arena must be in the same folder.
 
 ## Controls
 
