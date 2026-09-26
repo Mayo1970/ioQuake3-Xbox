@@ -4,6 +4,8 @@ build*
 *~
 /.vscode/
 /baseq3
+*.obj
+main.exe
 
 # OS X
 ####################
