@@ -510,7 +510,7 @@ vm_t *VM_Create( const char *module, intptr_t (*systemCalls)(intptr_t *),
 	Q_strncpyz(vm->name, module, sizeof(vm->name));
 
 #ifdef XBOX
-	// The baseq3 modules are linked into the XBE (sys/xbox_modules.c).
+	// The baseq3 (or, in the Team Arena XBE, missionpack) modules are linked into the XBE (sys/xbox_modules.c).
 	if(interpret == VMI_NATIVE && Sys_XboxUseBuiltinModule(module))
 	{
 		vm->dllHandle = Sys_LoadGameDll(module, &vm->entryPoint, VM_DllSyscall);

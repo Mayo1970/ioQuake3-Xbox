@@ -20,13 +20,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 //
-/*
-=======================================================================
-
-MULTIPLAYER MENU (SERVER BROWSER)
-
-=======================================================================
-*/
 
 
 #include "ui_local.h"
@@ -262,11 +255,6 @@ static int				g_emptyservers;
 static int				g_fullservers;
 
 
-/*
-=================
-ArenaServers_MaxPing
-=================
-*/
 static int ArenaServers_MaxPing( void ) {
 	int		maxPing;
 
@@ -278,11 +266,6 @@ static int ArenaServers_MaxPing( void ) {
 }
 
 
-/*
-=================
-ArenaServers_Compare
-=================
-*/
 static int QDECL ArenaServers_Compare( const void *arg1, const void *arg2 ) {
 	float			f1;
 	float			f2;
@@ -340,13 +323,7 @@ static int QDECL ArenaServers_Compare( const void *arg1, const void *arg2 ) {
 	return 0;
 }
 
-/*
-=================
-ArenaServers_SourceForLAN
-
-Convert ui's g_servertype to AS_* used by trap calls.
-=================
-*/
+// Converts the ui g_servertype to the AS_* value that trap calls use
 int ArenaServers_SourceForLAN(void) {
 	switch( g_servertype ) {
 	default:
@@ -364,11 +341,6 @@ int ArenaServers_SourceForLAN(void) {
 	}
 }
 
-/*
-=================
-ArenaServers_Go
-=================
-*/
 static void ArenaServers_Go( void ) {
 	servernode_t*	servernode;
 
@@ -379,11 +351,6 @@ static void ArenaServers_Go( void ) {
 }
 
 
-/*
-=================
-ArenaServers_UpdatePicture
-=================
-*/
 static void ArenaServers_UpdatePicture( void ) {
 	static char		picname[64];
 	servernode_t*	servernodeptr;
@@ -403,11 +370,6 @@ static void ArenaServers_UpdatePicture( void ) {
 }
 
 
-/*
-=================
-ArenaServers_UpdateMenu
-=================
-*/
 static void ArenaServers_UpdateMenu( void ) {
 	int				i;
 	int				j;
@@ -578,11 +540,6 @@ static void ArenaServers_UpdateMenu( void ) {
 }
 
 
-/*
-=================
-ArenaServers_Remove
-=================
-*/
 static void ArenaServers_Remove( void )
 {
 	int				i;
@@ -592,11 +549,9 @@ static void ArenaServers_Remove( void )
 	if (!g_arenaservers.list.numitems)
 		return;
 
-	// remove selected item from display list
-	// items are in scattered order due to sort and cull
-	// perform delete on list box contents, resync all lists
-
-	tableptr      = &g_arenaservers.table[g_arenaservers.list.curvalue];
+	// Items are in scattered order after sort and cull, so delete the selected one
+	// from the list box contents and resync all lists
+	tableptr     = &g_arenaservers.table[g_arenaservers.list.curvalue];
 	servernodeptr = tableptr->servernode;
 
 	// find address in master list
@@ -639,11 +594,6 @@ static void ArenaServers_Remove( void )
 }
 
 
-/*
-=================
-ArenaServers_Insert
-=================
-*/
 static void ArenaServers_Insert( char* adrstr, char* info, int pingtime )
 {
 	servernode_t*	servernodeptr;
@@ -683,22 +633,6 @@ static void ArenaServers_Insert( char* adrstr, char* info, int pingtime )
 	servernodeptr->maxPing    = atoi( Info_ValueForKey( info, "maxPing") );
 	servernodeptr->bPB = atoi( Info_ValueForKey( info, "punkbuster") );
 
-	/*
-	s = Info_ValueForKey( info, "nettype" );
-	for (i=0; ;i++)
-	{
-		if (!netnames[i])
-		{
-			servernodeptr->nettype = 0;
-			break;
-		}
-		else if (!Q_stricmp( netnames[i], s ))
-		{
-			servernodeptr->nettype = i;
-			break;
-		}
-	}
-	*/
 	servernodeptr->nettype = atoi(Info_ValueForKey(info, "nettype"));
 	if (servernodeptr->nettype < 0 || servernodeptr->nettype >= ARRAY_LEN(netnames) - 1) {
 		servernodeptr->nettype = 0;
@@ -723,13 +657,7 @@ static void ArenaServers_Insert( char* adrstr, char* info, int pingtime )
 }
 
 
-/*
-=================
-ArenaServers_LoadFavorites
-
-Load cvar address book entries into local lists.
-=================
-*/
+// Loads the cvar address book entries into local lists
 void ArenaServers_LoadFavorites( void )
 {
 	int				i;
@@ -756,9 +684,8 @@ void ArenaServers_LoadFavorites( void )
 		if (!adrstr[0])
 			continue;
 
-		// favorite server addresses must be maintained outside refresh list
-		// this mimics local and global netadr's stored in client
-		// these can be fetched to fill ping list
+		// Favorite addresses live outside the refresh list, like the client's local and global
+		// netadrs, so they can be fetched to fill the ping list
 		strcpy( g_arenaservers.favoriteaddresses[g_numfavoriteservers], adrstr );
 
 		// find this server in the old list
@@ -793,11 +720,6 @@ void ArenaServers_LoadFavorites( void )
 }
 
 
-/*
-=================
-ArenaServers_StopRefresh
-=================
-*/
 static void ArenaServers_StopRefresh( void )
 {
 	if (!g_arenaservers.refreshservers)
@@ -820,11 +742,6 @@ static void ArenaServers_StopRefresh( void )
 }
 
 
-/*
-=================
-ArenaServers_DoRefresh
-=================
-*/
 static void ArenaServers_DoRefresh( void )
 {
 	int		i;
@@ -833,6 +750,15 @@ static void ArenaServers_DoRefresh( void )
 	int		maxPing;
 	char	adrstr[MAX_ADDRESSLENGTH];
 	char	info[MAX_INFO_STRING];
+
+#ifdef XBOX
+	// The first master DNS lookup can outlast the 5 s window: wait up to 15 s while the count is -1
+	if (g_servertype >= UIAS_GLOBAL0 && g_servertype <= UIAS_GLOBAL5 &&
+		uis.realtime < g_arenaservers.refreshtime + 10000 &&
+		trap_LAN_GetServerCount(ArenaServers_SourceForLAN()) < 0) {
+		return;
+	}
+#endif
 
 	if (uis.realtime < g_arenaservers.refreshtime)
 	{
@@ -981,11 +907,6 @@ static void ArenaServers_DoRefresh( void )
 }
 
 
-/*
-=================
-ArenaServers_StartRefresh
-=================
-*/
 static void ArenaServers_StartRefresh( void )
 {
 	int		i;
@@ -1061,11 +982,6 @@ static void ArenaServers_StartRefresh( void )
 }
 
 
-/*
-=================
-ArenaServers_SaveChanges
-=================
-*/
 void ArenaServers_SaveChanges( void )
 {
 	int	i;
@@ -1078,11 +994,6 @@ void ArenaServers_SaveChanges( void )
 }
 
 
-/*
-=================
-ArenaServers_Sort
-=================
-*/
 void ArenaServers_Sort( int type ) {
 	if( g_sortkey == type ) {
 		return;
@@ -1093,11 +1004,6 @@ void ArenaServers_Sort( int type ) {
 }
 
 
-/*
-=================
-ArenaServers_SetType
-=================
-*/
 int ArenaServers_SetType( int type )
 {
 	ArenaServers_StopRefresh();
@@ -1170,11 +1076,6 @@ int ArenaServers_SetType( int type )
 	return type;
 }
 
-/*
-=================
-PunkBuster_Confirm
-=================
-*/
 static void Punkbuster_ConfirmEnable( qboolean result ) {
 	if (result)
 	{		
@@ -1192,11 +1093,6 @@ static void Punkbuster_ConfirmDisable( qboolean result ) {
 	g_arenaservers.punkbuster.curvalue = Com_Clamp( 0, 1, trap_Cvar_VariableValue( "cl_punkbuster" ) );
 }
 
-/*
-=================
-ArenaServers_Event
-=================
-*/
 static void ArenaServers_Event( void* ptr, int event ) {
 	int		id;
 
@@ -1291,11 +1187,6 @@ static void ArenaServers_Event( void* ptr, int event ) {
 }
 
 
-/*
-=================
-ArenaServers_MenuDraw
-=================
-*/
 static void ArenaServers_MenuDraw( void )
 {
 	if (g_arenaservers.refreshservers)
@@ -1305,11 +1196,6 @@ static void ArenaServers_MenuDraw( void )
 }
 
 
-/*
-=================
-ArenaServers_MenuKey
-=================
-*/
 static sfxHandle_t ArenaServers_MenuKey( int key ) {
 	if( key == K_SPACE  && g_arenaservers.refreshservers ) {
 		ArenaServers_StopRefresh();	
@@ -1333,11 +1219,6 @@ static sfxHandle_t ArenaServers_MenuKey( int key ) {
 }
 
 
-/*
-=================
-ArenaServers_MenuInit
-=================
-*/
 static void ArenaServers_MenuInit( void ) {
 	int			i;
 	int			y;
@@ -1611,11 +1492,6 @@ static void ArenaServers_MenuInit( void ) {
 }
 
 
-/*
-=================
-ArenaServers_Cache
-=================
-*/
 void ArenaServers_Cache( void ) {
 	trap_R_RegisterShaderNoMip( ART_BACK0 );
 	trap_R_RegisterShaderNoMip( ART_BACK1 );
@@ -1635,11 +1511,6 @@ void ArenaServers_Cache( void ) {
 }
 
 
-/*
-=================
-UI_ArenaServersMenu
-=================
-*/
 void UI_ArenaServersMenu( void ) {
 	ArenaServers_MenuInit();
 	UI_PushMenu( &g_arenaservers.menu );

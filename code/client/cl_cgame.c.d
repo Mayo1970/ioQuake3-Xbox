@@ -35,7 +35,7 @@
   /src/code/client/keycodes.h /src/code/client/snd_public.h \
   /src/code/client/../cgame/cg_public.h \
   /src/code/client/../game/bg_public.h \
-  /src/code/client/../botlib/botlib.h
+  /src/code/client/../botlib/botlib.h /src/code/client/../sys/sys_xbox.h
 /src/code/client/client.h:
 /src/code/client/../qcommon/q_shared.h:
 /usr/src/nxdk/lib/pdclib/platform/xbox/include/assert.h:
@@ -76,3 +76,4 @@
 /src/code/client/../cgame/cg_public.h:
 /src/code/client/../game/bg_public.h:
 /src/code/client/../botlib/botlib.h:
+/src/code/client/../sys/sys_xbox.h:

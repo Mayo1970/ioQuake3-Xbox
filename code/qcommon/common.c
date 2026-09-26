@@ -50,7 +50,12 @@ int demo_protocols[] =
  * desktop defaults (128 MiB hunk + 48 MiB zone) cannot fit in that pool. */
 #define DEF_COMHUNKMEGS 	20
 #define MIN_COMHUNKMEGS		20
+#ifdef MISSIONPACK
+/* The Team Arena XBE runs a 6 MiB zone (sys/xbox_boot.c); the floor below would raise it to 8. */
+#define DEF_COMZONEMEGS		6
+#else
 #define DEF_COMZONEMEGS		8
+#endif
 #else
 #define DEF_COMHUNKMEGS 	128
 #define MIN_COMHUNKMEGS		DEF_COMHUNKMEGS
@@ -655,6 +660,11 @@ int Com_RealTime(qtime_t *qtime) {
 	if (!qtime)
 		return t;
 	tms = localtime(&t);
+#ifdef XBOX
+	// nxdk localtime() always returns NULL, which left qtime uninitialized (TA server browser crash)
+	if (!tms)
+		tms = gmtime(&t);
+#endif
 	if (tms) {
 		qtime->tm_sec = tms->tm_sec;
 		qtime->tm_min = tms->tm_min;
@@ -2030,6 +2040,10 @@ void Com_GameRestart(int checksumFeed, qboolean disconnect)
 	{
 		com_gameRestarting = qtrue;
 		com_gameClientRestarting = com_cl_running->integer;
+#ifdef XBOX
+		// Missionpack runs in its own XBE (sys/xbox_launch.c); returns only when no hand-over happens.
+		Sys_XboxHandOverGame(Cvar_VariableString("fs_game"));
+#endif
 
 		// Kill server if we have one
 		if(com_sv_running->integer)
@@ -2048,6 +2062,10 @@ void Com_GameRestart(int checksumFeed, qboolean disconnect)
 		// Clean out any user and VM created cvars
 		Cvar_Restart(qtrue);
 		Com_ExecuteCfg();
+#ifdef XBOX
+		// Cvar_Restart reset the XBE command line (vm_* 0, sv_pure 0, memory, net); reapply it as Com_Init does.
+		Com_StartupVariable(NULL);
+#endif
 
 		if(disconnect)
 		{

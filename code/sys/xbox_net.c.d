@@ -76,6 +76,7 @@
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/prot/ip6.h \
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/prot/ip.h \
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/prot/udp.h \
+  /usr/src/nxdk/lib/net/lwip/src/include/lwip/dns.h \
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/netifapi.h \
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/sys.h \
   /usr/src/nxdk/lib/net/nforceif/include/arch/sys_arch.h \
@@ -85,7 +86,12 @@
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/priv/api_msg.h \
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/igmp.h \
   /usr/src/nxdk/lib/net/lwip/src/include/lwip/api.h \
-  /usr/src/nxdk/lib/net/lwip/src/include/lwip/netbuf.h
+  /usr/src/nxdk/lib/net/lwip/src/include/lwip/netbuf.h \
+  /usr/src/nxdk/lib/net/lwip/src/include/lwip/netdb.h \
+  /usr/src/nxdk/lib/net/lwip/src/include/lwip/inet.h \
+  /usr/src/nxdk/lib/net/lwip/src/include/lwip/sockets.h \
+  /usr/src/nxdk/lib/net/lwip/src/include/lwip/errno.h \
+  /usr/src/nxdk/lib/pdclib/include/errno.h
 /src/code/sys/sys_xbox.h:
 /usr/src/nxdk/lib/pdclib/include/stdint.h:
 /usr/src/nxdk/lib/pdclib/include/pdclib/_PDCLIB_lib_ext1.h:
@@ -169,6 +175,7 @@
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/prot/ip6.h:
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/prot/ip.h:
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/prot/udp.h:
+/usr/src/nxdk/lib/net/lwip/src/include/lwip/dns.h:
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/netifapi.h:
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/sys.h:
 /usr/src/nxdk/lib/net/nforceif/include/arch/sys_arch.h:
@@ -179,3 +186,8 @@
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/igmp.h:
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/api.h:
 /usr/src/nxdk/lib/net/lwip/src/include/lwip/netbuf.h:
+/usr/src/nxdk/lib/net/lwip/src/include/lwip/netdb.h:
+/usr/src/nxdk/lib/net/lwip/src/include/lwip/inet.h:
+/usr/src/nxdk/lib/net/lwip/src/include/lwip/sockets.h:
+/usr/src/nxdk/lib/net/lwip/src/include/lwip/errno.h:
+/usr/src/nxdk/lib/pdclib/include/errno.h:

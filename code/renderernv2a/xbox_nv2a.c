@@ -139,7 +139,12 @@ typedef struct {
 	xboxNV2ASkyBounds_t bounds;
 } XboxNV2ASky;
 
+#ifdef MISSIONPACK
+/* A TA match on mpteam1 registered 568 images (429 stored, 139 skipped for pool space). */
+#define XBOX_NV2A_MAX_IMAGES 768
+#else
 #define XBOX_NV2A_MAX_IMAGES 512
+#endif
 /* cl_cin.c MAX_VIDEO_HANDLES; each handle's scratch texture follows the pool images. */
 #define XBOX_NV2A_MAX_CINEMATICS 16
 #define XBOX_NV2A_MAX_SHADERS 1024

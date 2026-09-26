@@ -14,7 +14,7 @@
 #define XBOX_NV2A_MAX_SKIN_SURFACES 256
 /* q3dm11's five players take 4057 KiB at LOD 1 (5150 at LOD 0, 3099 at LOD 2); the heap has ~5 MiB. */
 #define XBOX_NV2A_PLAYER_LOD 1
-#ifdef STANDALONEOA
+#if defined(STANDALONEOA) || defined(MISSIONPACK)
 /* Hunk kept free after a hunk model: the next MD3 or TGA read (up to ~2 MiB) and sounds use temp hunk. */
 #define XBOX_NV2A_MODEL_HUNK_RESERVE (3 * 1024 * 1024)
 #endif
@@ -126,8 +126,8 @@ static md3Header_t *XboxModelLoadMD3(const char *name, qboolean *onHunk)
 		ri.FS_FreeFile(buffer);
 		return NULL;
 	}
-#ifdef STANDALONEOA
-	/* ioq3 R_LoadMD3 keeps models on the hunk; small OA maps leave most of it idle. */
+#if defined(STANDALONEOA) || defined(MISSIONPACK)
+	/* ioq3 R_LoadMD3 keeps models on the hunk; OA maps and TA menus leave most of it idle. */
 	if (Hunk_MemoryRemaining() >= length + XBOX_NV2A_MODEL_HUNK_RESERVE) {
 		md3 = (md3Header_t *)ri.Hunk_Alloc((int)length, h_low);
 		*onHunk = qtrue;

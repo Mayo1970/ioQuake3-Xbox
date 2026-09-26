@@ -24,6 +24,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 
 #include "../botlib/botlib.h"
+#ifdef XBOX
+#include "../sys/sys_xbox.h"
+#endif
 
 #ifdef USE_MUMBLE
 #include "libmumblelink.h"
@@ -731,7 +734,13 @@ void CL_InitCGame( void ) {
 
 	// load the dll or bytecode
 	interpret = Cvar_VariableValue("vm_cgame");
+#ifdef XBOX
+	// The linked-in cgame replaces a stock id cgame.qvm on pure servers too.
+	if(cl_connectedToPureServer && !(interpret == VMI_NATIVE &&
+		Sys_XboxUseBuiltinModule("cgame") && FS_XboxStockVM("cgame")))
+#else
 	if(cl_connectedToPureServer)
+#endif
 	{
 		// if sv_pure is set we only allow qvms to be loaded
 		if(interpret != VMI_COMPILED && interpret != VMI_BYTECODE)

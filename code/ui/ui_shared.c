@@ -84,11 +84,6 @@ static char		memoryPool[MEM_POOL_SIZE];
 static int		allocPoint, outOfMemory;
 
 
-/*
-===============
-UI_Alloc
-===============
-*/				  
 void *UI_Alloc( int size ) {
 	char	*p; 
 
@@ -108,11 +103,6 @@ void *UI_Alloc( int size ) {
 	return p;
 }
 
-/*
-===============
-UI_InitMemory
-===============
-*/
 void UI_InitMemory( void ) {
 	allocPoint = 0;
 	outOfMemory = qfalse;
@@ -127,11 +117,7 @@ qboolean UI_OutOfMemory( void ) {
 
 
 #define HASH_TABLE_SIZE 2048
-/*
-================
-return a hash value for the string
-================
-*/
+// Return a hash value for the string
 static unsigned hashForString(const char *str) {
 	int		i;
 	unsigned	hash;
@@ -227,11 +213,6 @@ void String_Report(void) {
 	Com_Printf("Memory Pool is %.1f%% full, %i bytes out of %i used.\n", f, allocPoint, MEM_POOL_SIZE);
 }
 
-/*
-=================
-String_Init
-=================
-*/
 void String_Init(void) {
 	int i;
 	for (i = 0; i < HASH_TABLE_SIZE; i++) {
@@ -250,11 +231,6 @@ void String_Init(void) {
 }
 
 #if 0
-/*
-=================
-PC_SourceWarning
-=================
-*/
 static Q_PRINTF_FUNC(2, 3) void PC_SourceWarning(int handle, char *format, ...) {
 	int line;
 	char filename[128];
@@ -273,11 +249,6 @@ static Q_PRINTF_FUNC(2, 3) void PC_SourceWarning(int handle, char *format, ...) 
 }
 #endif
 
-/*
-=================
-PC_SourceError
-=================
-*/
 static Q_PRINTF_FUNC(2, 3) void PC_SourceError(int handle, char *format, ...) {
 	int line;
 	char filename[128];
@@ -295,11 +266,6 @@ static Q_PRINTF_FUNC(2, 3) void PC_SourceError(int handle, char *format, ...) {
 	Com_Printf(S_COLOR_RED "ERROR: %s, line %d: %s\n", filename, line, string);
 }
 
-/*
-=================
-LerpColor
-=================
-*/
 void LerpColor(vec4_t a, vec4_t b, vec4_t c, float t)
 {
 	int i;
@@ -315,11 +281,6 @@ void LerpColor(vec4_t a, vec4_t b, vec4_t c, float t)
 	}
 }
 
-/*
-=================
-Float_Parse
-=================
-*/
 qboolean Float_Parse(char **p, float *f) {
 	char	*token;
 	token = COM_ParseExt(p, qfalse);
@@ -331,11 +292,6 @@ qboolean Float_Parse(char **p, float *f) {
 	}
 }
 
-/*
-=================
-PC_Float_Parse
-=================
-*/
 qboolean PC_Float_Parse(int handle, float *f) {
 	pc_token_t token;
 	int negative = qfalse;
@@ -358,11 +314,6 @@ qboolean PC_Float_Parse(int handle, float *f) {
 	return qtrue;
 }
 
-/*
-=================
-Color_Parse
-=================
-*/
 qboolean Color_Parse(char **p, vec4_t *c) {
 	int i;
 	float f;
@@ -376,11 +327,6 @@ qboolean Color_Parse(char **p, vec4_t *c) {
 	return qtrue;
 }
 
-/*
-=================
-PC_Color_Parse
-=================
-*/
 qboolean PC_Color_Parse(int handle, vec4_t *c) {
 	int i;
 	float f;
@@ -394,11 +340,6 @@ qboolean PC_Color_Parse(int handle, vec4_t *c) {
 	return qtrue;
 }
 
-/*
-=================
-Int_Parse
-=================
-*/
 qboolean Int_Parse(char **p, int *i) {
 	char	*token;
 	token = COM_ParseExt(p, qfalse);
@@ -411,11 +352,6 @@ qboolean Int_Parse(char **p, int *i) {
 	}
 }
 
-/*
-=================
-PC_Int_Parse
-=================
-*/
 qboolean PC_Int_Parse(int handle, int *i) {
 	pc_token_t token;
 	int negative = qfalse;
@@ -439,11 +375,6 @@ qboolean PC_Int_Parse(int handle, int *i) {
 	return qtrue;
 }
 
-/*
-=================
-Rect_Parse
-=================
-*/
 qboolean Rect_Parse(char **p, rectDef_t *r) {
 	if (Float_Parse(p, &r->x)) {
 		if (Float_Parse(p, &r->y)) {
@@ -457,11 +388,6 @@ qboolean Rect_Parse(char **p, rectDef_t *r) {
 	return qfalse;
 }
 
-/*
-=================
-PC_Rect_Parse
-=================
-*/
 qboolean PC_Rect_Parse(int handle, rectDef_t *r) {
 	if (PC_Float_Parse(handle, &r->x)) {
 		if (PC_Float_Parse(handle, &r->y)) {
@@ -475,11 +401,6 @@ qboolean PC_Rect_Parse(int handle, rectDef_t *r) {
 	return qfalse;
 }
 
-/*
-=================
-String_Parse
-=================
-*/
 qboolean String_Parse(char **p, const char **out) {
 	char *token;
 
@@ -491,11 +412,6 @@ qboolean String_Parse(char **p, const char **out) {
 	return qfalse;
 }
 
-/*
-=================
-PC_String_Parse
-=================
-*/
 qboolean PC_String_Parse(int handle, const char **out) {
 	pc_token_t token;
 
@@ -506,11 +422,6 @@ qboolean PC_String_Parse(int handle, const char **out) {
     return qtrue;
 }
 
-/*
-=================
-PC_Script_Parse
-=================
-*/
 qboolean PC_Script_Parse(int handle, const char **out) {
 	char script[1024];
 	pc_token_t token;
@@ -547,13 +458,7 @@ qboolean PC_Script_Parse(int handle, const char **out) {
 // display, window, menu, item code
 // 
 
-/*
-==================
-Init_Display
-
-Initializes the display with a structure to all the drawing routines
- ==================
-*/
+// Gives the display a structure of all the drawing routines
 void Init_Display(displayContextDef_t *dc) {
 	DC = dc;
 }
@@ -570,14 +475,7 @@ void GradientBar_Paint(rectDef_t *rect, vec4_t color) {
 }
 
 
-/*
-==================
-Window_Init
-
-Initializes a window structure ( windowDef_t ) with defaults
- 
-==================
-*/
+// Sets a window structure (windowDef_t) to its defaults
 void Window_Init(Window *w) {
 	memset(w, 0, sizeof(windowDef_t));
 	w->borderSize = 1;
@@ -1832,9 +1730,8 @@ qboolean Item_ListBox_HandleKey(itemDef_t *item, int key, qboolean down, qboolea
 			}
 		}
 
-		// Use mouse wheel in vertical and horizontal menus.
-		// If scrolling 3 items would replace over half of the
-		// displayed items, only scroll 1 item at a time.
+		// Mouse wheel in vertical and horizontal menus; scroll 1 item at a time
+		// if 3 items would replace over half of the displayed items
 		if ( key == K_MWHEELUP ) {
 			int scroll = viewmax < 6 ? 1 : 3;
 			listPtr->startPos -= scroll;
@@ -2124,9 +2021,7 @@ qboolean Item_TextField_HandleKey(itemDef_t *item, int key) {
 			}
 
 
-			//
 			// ignore any non printable chars
-			//
 			if ( key < 32 || !item->cvar) {
 			    return qtrue;
 		    }
@@ -2240,9 +2135,8 @@ qboolean Item_TextField_HandleKey(itemDef_t *item, int key) {
 static void Scroll_ListBox_AutoFunc(void *p) {
 	scrollInfo_t *si = (scrollInfo_t*)p;
 	if (DC->realTime > si->nextScrollTime) { 
-		// need to scroll which is done by simulating a click to the item
-		// this is done a bit sideways as the autoscroll "knows" that the item is a listbox
-		// so it calls it directly
+		// Scroll by simulating a click on the item; autoscroll "knows" the item is a listbox,
+		// so it calls the listbox handler directly
 		Item_ListBox_HandleKey(si->item, si->scrollKey, qtrue, qfalse);
 		si->nextScrollTime = DC->realTime + si->adjustValue; 
 	}
@@ -2301,9 +2195,8 @@ static void Scroll_ListBox_ThumbFunc(void *p) {
 	}
 
 	if (DC->realTime > si->nextScrollTime) { 
-		// need to scroll which is done by simulating a click to the item
-		// this is done a bit sideways as the autoscroll "knows" that the item is a listbox
-		// so it calls it directly
+		// Scroll by simulating a click on the item; autoscroll "knows" the item is a listbox,
+		// so it calls the listbox handler directly
 		Item_ListBox_HandleKey(si->item, si->scrollKey, qtrue, qfalse);
 		si->nextScrollTime = DC->realTime + si->adjustValue; 
 	}
@@ -2503,9 +2396,6 @@ qboolean Item_HandleKey(itemDef_t *item, int key, qboolean down) {
     case ITEM_TYPE_SLIDER:
       return Item_Slider_HandleKey(item, key, down);
       break;
-    //case ITEM_TYPE_IMAGE:
-    //  Item_Image_Paint(item);
-    //  break;
     default:
       return qfalse;
       break;
@@ -2604,6 +2494,10 @@ static void Display_CloseCinematics( void ) {
 }
 
 void  Menus_Activate(menuDef_t *menu) {
+#ifdef XBOX
+	// onOpen can decode a 1 MiB levelshot; the old menu's video (2.9 MiB) must be freed first
+	Display_CloseCinematics();
+#endif
 	menu->window.flags |= (WINDOW_HASFOCUS | WINDOW_VISIBLE);
 	if (menu->onOpen) {
 		itemDef_t item;
@@ -2634,9 +2528,8 @@ int Display_VisibleMenuCount( void ) {
 void Menus_HandleOOBClick(menuDef_t *menu, int key, qboolean down) {
 	if (menu) {
 		int i;
-		// basically the behaviour we are looking for is if there are windows in the stack.. see if 
-		// the cursor is within any of them.. if not close them otherwise activate them and pass the 
-		// key on.. force a mouse move to activate focus and script stuff 
+		// Close stacked windows the cursor is not in; activate the one it is in, pass the key on,
+		// and force a mouse move to run the focus scripts
 		if (down && menu->window.flags & WINDOW_OOB_CLICK) {
 			Menu_RunCloseScript(menu);
 			menu->window.flags &= ~(WINDOW_HASFOCUS | WINDOW_VISIBLE);
@@ -3084,35 +2977,6 @@ void Item_Text_Paint(itemDef_t *item) {
 
 	Item_TextColor(item, &color);
 
-	//FIXME: this is a fucking mess
-/*
-	adjust = 0;
-	if (item->textStyle == ITEM_TEXTSTYLE_OUTLINED || item->textStyle == ITEM_TEXTSTYLE_OUTLINESHADOWED) {
-		adjust = 0.5;
-	}
-
-	if (item->textStyle == ITEM_TEXTSTYLE_SHADOWED || item->textStyle == ITEM_TEXTSTYLE_OUTLINESHADOWED) {
-		Fade(&item->window.flags, &DC->Assets.shadowColor[3], DC->Assets.fadeClamp, &item->window.nextTime, DC->Assets.fadeCycle, qfalse);
-		DC->drawText(item->textRect.x + DC->Assets.shadowX, item->textRect.y + DC->Assets.shadowY, item->textscale, DC->Assets.shadowColor, textPtr, adjust);
-	}
-*/
-
-
-//	if (item->textStyle == ITEM_TEXTSTYLE_OUTLINED || item->textStyle == ITEM_TEXTSTYLE_OUTLINESHADOWED) {
-//		Fade(&item->window.flags, &item->window.outlineColor[3], DC->Assets.fadeClamp, &item->window.nextTime, DC->Assets.fadeCycle, qfalse);
-//		/*
-//		Text_Paint(item->textRect.x-1, item->textRect.y-1, item->textscale, item->window.foreColor, textPtr, adjust);
-//		Text_Paint(item->textRect.x, item->textRect.y-1, item->textscale, item->window.foreColor, textPtr, adjust);
-//		Text_Paint(item->textRect.x+1, item->textRect.y-1, item->textscale, item->window.foreColor, textPtr, adjust);
-//		Text_Paint(item->textRect.x-1, item->textRect.y, item->textscale, item->window.foreColor, textPtr, adjust);
-//		Text_Paint(item->textRect.x+1, item->textRect.y, item->textscale, item->window.foreColor, textPtr, adjust);
-//		Text_Paint(item->textRect.x-1, item->textRect.y+1, item->textscale, item->window.foreColor, textPtr, adjust);
-//		Text_Paint(item->textRect.x, item->textRect.y+1, item->textscale, item->window.foreColor, textPtr, adjust);
-//		Text_Paint(item->textRect.x+1, item->textRect.y+1, item->textscale, item->window.foreColor, textPtr, adjust);
-//		*/
-//		DC->drawText(item->textRect.x - 1, item->textRect.y + 1, item->textscale * 1.02, item->window.outlineColor, textPtr, adjust);
-//	}
-
 	DC->drawText(item->textRect.x, item->textRect.y, item->textscale, color, textPtr, 0, 0, item->textStyle);
 }
 
@@ -3305,11 +3169,6 @@ static configcvar_t g_configcvars[] =
 };
 #endif
 
-/*
-=================
-Controls_GetKeyAssignment
-=================
-*/
 static void Controls_GetKeyAssignment (char *command, int *twokeys)
 {
 	int		count;
@@ -3335,11 +3194,6 @@ static void Controls_GetKeyAssignment (char *command, int *twokeys)
 	}
 }
 
-/*
-=================
-Controls_GetConfig
-=================
-*/
 void Controls_GetConfig( void )
 {
 	int		i;
@@ -3354,22 +3208,8 @@ void Controls_GetConfig( void )
 		g_bindings[i].bind1 = twokeys[0];
 		g_bindings[i].bind2 = twokeys[1];
 	}
-
-	//s_controls.invertmouse.curvalue  = DC->getCVarValue( "m_pitch" ) < 0;
-	//s_controls.smoothmouse.curvalue  = UI_ClampCvar( 0, 1, Controls_GetCvarValue( "m_filter" ) );
-	//s_controls.alwaysrun.curvalue    = UI_ClampCvar( 0, 1, Controls_GetCvarValue( "cl_run" ) );
-	//s_controls.autoswitch.curvalue   = UI_ClampCvar( 0, 1, Controls_GetCvarValue( "cg_autoswitch" ) );
-	//s_controls.sensitivity.curvalue  = UI_ClampCvar( 2, 30, Controls_GetCvarValue( "sensitivity" ) );
-	//s_controls.joyenable.curvalue    = UI_ClampCvar( 0, 1, Controls_GetCvarValue( "in_joystick" ) );
-	//s_controls.joythreshold.curvalue = UI_ClampCvar( 0.05, 0.75, Controls_GetCvarValue( "joy_threshold" ) );
-	//s_controls.freelook.curvalue     = UI_ClampCvar( 0, 1, Controls_GetCvarValue( "cl_freelook" ) );
 }
 
-/*
-=================
-Controls_SetConfig
-=================
-*/
 void Controls_SetConfig(qboolean restart)
 {
 	int		i;
@@ -3386,28 +3226,10 @@ void Controls_SetConfig(qboolean restart)
 				DC->setBinding( g_bindings[i].bind2, g_bindings[i].command );
 		}
 	}
-
-	//if ( s_controls.invertmouse.curvalue )
-	//	DC->setCVar("m_pitch", va("%f),-fabs( DC->getCVarValue( "m_pitch" ) ) );
-	//else
-	//	trap_Cvar_SetValue( "m_pitch", fabs( trap_Cvar_VariableValue( "m_pitch" ) ) );
-
-	//trap_Cvar_SetValue( "m_filter", s_controls.smoothmouse.curvalue );
-	//trap_Cvar_SetValue( "cl_run", s_controls.alwaysrun.curvalue );
-	//trap_Cvar_SetValue( "cg_autoswitch", s_controls.autoswitch.curvalue );
-	//trap_Cvar_SetValue( "sensitivity", s_controls.sensitivity.curvalue );
-	//trap_Cvar_SetValue( "in_joystick", s_controls.joyenable.curvalue );
-	//trap_Cvar_SetValue( "joy_threshold", s_controls.joythreshold.curvalue );
-	//trap_Cvar_SetValue( "cl_freelook", s_controls.freelook.curvalue );
 	DC->executeText(EXEC_APPEND, "in_restart\n");
 	//trap_Cmd_ExecuteText( EXEC_APPEND, "in_restart\n" );
 }
 
-/*
-=================
-Controls_SetDefaults
-=================
-*/
 void Controls_SetDefaults( void )
 {
 	int	i;
@@ -3418,15 +3240,6 @@ void Controls_SetDefaults( void )
 		g_bindings[i].bind1 = g_bindings[i].defaultbind1;
 		g_bindings[i].bind2 = g_bindings[i].defaultbind2;
 	}
-
-	//s_controls.invertmouse.curvalue  = Controls_GetCvarDefault( "m_pitch" ) < 0;
-	//s_controls.smoothmouse.curvalue  = Controls_GetCvarDefault( "m_filter" );
-	//s_controls.alwaysrun.curvalue    = Controls_GetCvarDefault( "cl_run" );
-	//s_controls.autoswitch.curvalue   = Controls_GetCvarDefault( "cg_autoswitch" );
-	//s_controls.sensitivity.curvalue  = Controls_GetCvarDefault( "sensitivity" );
-	//s_controls.joyenable.curvalue    = Controls_GetCvarDefault( "in_joystick" );
-	//s_controls.joythreshold.curvalue = Controls_GetCvarDefault( "joy_threshold" );
-	//s_controls.freelook.curvalue     = Controls_GetCvarDefault( "cl_freelook" );
 }
 
 int BindingIDFromName(const char *name) {
@@ -3696,11 +3509,6 @@ void Item_Model_Paint(itemDef_t *item) {
 	refdef.fov_x = (modelPtr->fov_x) ? modelPtr->fov_x : w;
 	refdef.fov_y = (modelPtr->fov_y) ? modelPtr->fov_y : h;
 
-	//refdef.fov_x = (int)((float)refdef.width / 640.0f * 90.0f);
-	//xx = refdef.width / tan( refdef.fov_x / 360 * M_PI );
-	//refdef.fov_y = atan2( refdef.height, xx );
-	//refdef.fov_y *= ( 360 / M_PI );
-
 	DC->clearScene();
 
 	refdef.time = DC->realTime;
@@ -3708,10 +3516,6 @@ void Item_Model_Paint(itemDef_t *item) {
 	// add the model
 
 	memset( &ent, 0, sizeof(ent) );
-
-	//adjust = 5.0 * sin( (float)uis.realtime / 500 );
-	//adjust = 360 % (int)((float)uis.realtime / 1000);
-	//VectorSet( angles, 0, 0, 1 );
 
 	// use item storage to track
 	if (modelPtr->rotationSpeed) {
@@ -3749,10 +3553,8 @@ void Item_ListBox_Paint(itemDef_t *item) {
 	qhandle_t optionalImage;
 	listBoxDef_t *listPtr = (listBoxDef_t*)item->typeData;
 
-	// the listbox is horizontal or vertical and has a fixed size scroll bar going either direction
-	// elements are enumerated from the DC and either text or image handles are acquired from the DC as well
-	// textscale is used to size the text, textalignx and textaligny are used to size image elements
-	// there is no clipping available so only the last completely visible item is painted
+	// Fixed-size scroll bar; the DC gives the elements (text or images), sized by textscale and
+	// textalignx/y. No clipping, so the last item painted is the last completely visible one
 	count = DC->feederCount(item->special);
 	// default is vertical if horizontal flag is not here
 	if (item->window.flags & WINDOW_HORIZONTAL) {
@@ -4124,9 +3926,6 @@ void Item_Paint(itemDef_t *item) {
     case ITEM_TYPE_LISTBOX:
       Item_ListBox_Paint(item);
       break;
-    //case ITEM_TYPE_IMAGE:
-    //  Item_Image_Paint(item);
-    //  break;
     case ITEM_TYPE_MODEL:
       Item_Model_Paint(item);
       break;
@@ -4376,11 +4175,6 @@ void Menu_Paint(menuDef_t *menu, qboolean forcePaint) {
 	}
 }
 
-/*
-===============
-Item_ValidateTypeData
-===============
-*/
 void Item_ValidateTypeData(itemDef_t *item) {
 	if (item->typeData) {
 		return;
@@ -4404,11 +4198,7 @@ void Item_ValidateTypeData(itemDef_t *item) {
 	}
 }
 
-/*
-===============
-Keyword Hash
-===============
-*/
+// Keyword hash
 
 #define KEYWORDHASH_SIZE	512
 
@@ -4437,11 +4227,6 @@ void KeywordHash_Add(keywordHash_t *table[], keywordHash_t *key) {
 	int hash;
 
 	hash = KeywordHash_Key(key->keyword);
-/*
-	if (table[hash]) {
-		int collision = qtrue;
-	}
-*/
 	key->next = table[hash];
 	table[hash] = key;
 }
@@ -4459,11 +4244,7 @@ keywordHash_t *KeywordHash_Find(keywordHash_t *table[], char *keyword)
 	return NULL;
 }
 
-/*
-===============
-Item Keyword Parse functions
-===============
-*/
+// Item keyword parse functions
 
 // name <string>
 qboolean ItemParse_name( itemDef_t *item, int handle ) {
@@ -5239,11 +5020,6 @@ keywordHash_t itemParseKeywords[] = {
 
 keywordHash_t *itemParseKeywordHash[KEYWORDHASH_SIZE];
 
-/*
-===============
-Item_SetupKeywordHash
-===============
-*/
 void Item_SetupKeywordHash(void) {
 	int i;
 
@@ -5282,11 +5058,6 @@ static const char *knownRatios[ ][2] =
 	{ NULL    , NULL    }
 };
 
-/*
-===============
-UI_ResolutionToAspect
-===============
-*/
 static void UI_ResolutionToAspect( const char *resolution, char *aspect, size_t aspectLength ) {
 	int i, w, h;
 	char *x;
@@ -5308,13 +5079,7 @@ static void UI_ResolutionToAspect( const char *resolution, char *aspect, size_t 
 	}
 }
 
-/*
-===============
-Item_ApplyHacks
-
-Hacks to fix issues with Team Arena menu scripts
-===============
-*/
+// Hacks to fix issues with Team Arena menu scripts
 static void Item_ApplyHacks( itemDef_t *item ) {
 
 	// Fix length of favorite address in createfavorite.menu
@@ -5427,11 +5192,6 @@ static void Item_ApplyHacks( itemDef_t *item ) {
 
 }
 
-/*
-===============
-Item_Parse
-===============
-*/
 qboolean Item_Parse(int handle, itemDef_t *item) {
 	pc_token_t token;
 	keywordHash_t *key;
@@ -5485,11 +5245,7 @@ void Item_InitControls(itemDef_t *item) {
 	}
 }
 
-/*
-===============
-Menu Keyword Parse functions
-===============
-*/
+// Menu keyword parse functions
 
 qboolean MenuParse_font( itemDef_t *item, int handle ) {
 	menuDef_t *menu = (menuDef_t*)item;
@@ -5825,11 +5581,6 @@ keywordHash_t menuParseKeywords[] = {
 
 keywordHash_t *menuParseKeywordHash[KEYWORDHASH_SIZE];
 
-/*
-===============
-Menu_SetupKeywordHash
-===============
-*/
 void Menu_SetupKeywordHash(void) {
 	int i;
 
@@ -5839,11 +5590,6 @@ void Menu_SetupKeywordHash(void) {
 	}
 }
 
-/*
-===============
-Menu_Parse
-===============
-*/
 qboolean Menu_Parse(int handle, menuDef_t *menu) {
 	pc_token_t token;
 	keywordHash_t *key;
@@ -5879,11 +5625,6 @@ qboolean Menu_Parse(int handle, menuDef_t *menu) {
 	return qfalse;
 }
 
-/*
-===============
-Menu_New
-===============
-*/
 void Menu_New(int handle) {
 	menuDef_t *menu = &Menus[menuCount];
 

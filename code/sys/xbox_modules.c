@@ -74,10 +74,16 @@ static xboxModule_t *Sys_XboxFindModule(const char *name)
 	return NULL;
 }
 
+/* The Team Arena XBE links the missionpack modules; mods keep loading their own QVMs. */
+#ifdef MISSIONPACK
+#define XBOX_MODULE_GAME BASETA
+#else
+#define XBOX_MODULE_GAME BASEGAME
+#endif
+
 int Sys_XboxUseBuiltinModule(const char *name)
 {
-	/* These are the BASEGAME modules; mods keep loading their own QVMs. */
-	return Sys_XboxFindModule(name) && !Q_stricmp(FS_GetCurrentGameDir(), BASEGAME);
+	return Sys_XboxFindModule(name) && !Q_stricmp(FS_GetCurrentGameDir(), XBOX_MODULE_GAME);
 }
 
 /* A QVM or DLL starts from fresh globals; restore .data and zero .bss to match. */

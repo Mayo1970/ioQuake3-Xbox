@@ -1,9 +1,13 @@
 # Native OG Xbox target, independent of the host CMake build.
 # No SDL, OpenGL, or desktop platform libraries enter this target.
 
-# Flavor: q3 by default; `make -f Makefile.xbox oa` or OA=1 builds Open Arena.
+# Flavor: q3 by default; `make -f Makefile.xbox oa` or OA=1 builds Open Arena,
+# `ta` or TA=1 the Team Arena XBE (deployed as ta.xbe next to the q3 default.xbe).
 ifeq ($(MAKECMDGOALS),oa)
 OA := 1
+endif
+ifeq ($(MAKECMDGOALS),ta)
+TA := 1
 endif
 
 ifeq ($(OA),1)
@@ -11,11 +15,20 @@ FLAVOR = oa
 XBE_TITLE = "Open Arena"
 OUTPUT_DIR = build_xbox_oa
 FLAVOR_DEFINES = -DSTANDALONEOA
+XBOX_ICON = $(CURDIR)/icons/oa/TitleImage.xbx
+else ifeq ($(TA),1)
+FLAVOR = ta
+XBE_TITLE = "ioQuake3 Team Arena"
+OUTPUT_DIR = build_xbox_ta
+FLAVOR_DEFINES = -DMISSIONPACK
+# Launched by the q3 XBE, never listed by a dashboard, so it shares the q3 icon.
+XBOX_ICON = $(CURDIR)/icons/q3/TitleImage.xbx
 else
 FLAVOR = q3
 XBE_TITLE = ioQuake3
 OUTPUT_DIR = build_xbox
 FLAVOR_DEFINES =
+XBOX_ICON = $(CURDIR)/icons/q3/TitleImage.xbx
 endif
 
 SRCS = \
@@ -30,6 +43,7 @@ SRCS = \
 	$(CURDIR)/code/sys/xbox_diag.c \
 	$(CURDIR)/code/sys/xbox_net.c \
 	$(CURDIR)/code/sys/xbox_modules.c \
+	$(CURDIR)/code/sys/xbox_launch.c \
 	$(CURDIR)/code/renderernv2a/xbox_nv2a.c	$(CURDIR)/code/renderernv2a/xbox_nv2a_shader.c 	$(CURDIR)/code/renderernv2a/xbox_nv2a_model.c 	$(CURDIR)/code/renderernv2a/xbox_nv2a_world.c 	$(CURDIR)/code/renderernv2a/xbox_nv2a_sky.c 	$(CURDIR)/code/renderernv2a/xbox_nv2a_dxt.c 	$(CURDIR)/code/renderercommon/tr_image_tga.c 	$(CURDIR)/code/renderercommon/tr_image_jpg.c \
 	$(CURDIR)/code/renderercommon/tr_noise.c \
 	$(CURDIR)/code/sys/xbox_qcommon.c \
@@ -178,7 +192,7 @@ ui_SRCS = \
 	q3_ui/ui_votemenu_map.c q3_ui/ui_votemenu_custom.c ui/ui_syscalls.c \
 	$(XBOX_MODULE_SHARED)
 else
-# baseq3 lists from cmake/basegame.cmake.
+# baseq3 lists from cmake/basegame.cmake; Team Arena adds cmake/missionpack.cmake's.
 XBOX_MODULE_ROOT = $(CURDIR)/code
 
 qagame_SRCS = \
@@ -198,6 +212,13 @@ cgame_SRCS = \
 	cgame/cg_predict.c cgame/cg_scoreboard.c cgame/cg_servercmds.c cgame/cg_snapshot.c \
 	cgame/cg_view.c cgame/cg_weapons.c cgame/cg_syscalls.c $(XBOX_MODULE_SHARED)
 
+ifeq ($(FLAVOR),ta)
+cgame_SRCS += cgame/cg_newdraw.c ui/ui_shared.c
+
+ui_SRCS = \
+	ui/ui_main.c ui/ui_atoms.c ui/ui_gameinfo.c ui/ui_players.c ui/ui_shared.c \
+	game/bg_misc.c ui/ui_syscalls.c $(XBOX_MODULE_SHARED)
+else
 ui_SRCS = \
 	q3_ui/ui_main.c game/bg_misc.c q3_ui/ui_addbots.c q3_ui/ui_atoms.c q3_ui/ui_cdkey.c \
 	q3_ui/ui_cinematics.c q3_ui/ui_confirm.c q3_ui/ui_connect.c q3_ui/ui_controls2.c \
@@ -211,6 +232,7 @@ ui_SRCS = \
 	q3_ui/ui_team.c q3_ui/ui_teamorders.c q3_ui/ui_video.c ui/ui_syscalls.c \
 	$(XBOX_MODULE_SHARED)
 endif
+endif
 
 XBOX_MODULE_OBJS = $(XBOX_MODULE_DIR)/qagame.obj $(XBOX_MODULE_DIR)/cgame.obj \
 	$(XBOX_MODULE_DIR)/ui.obj
@@ -221,17 +243,17 @@ NXDK_DIR ?= /usr/src/nxdk
 include $(NXDK_DIR)/Makefile
 
 # cxbe cannot write $$XTIMAGE (dashboard icon) or clear the 64 MB flag; patch both after every link.
-$(OUTPUT_DIR)/.xbe_icon: $(OUTPUT_DIR)/default.xbe $(CURDIR)/icons/$(FLAVOR)/TitleImage.xbx \
+$(OUTPUT_DIR)/.xbe_icon: $(OUTPUT_DIR)/default.xbe $(XBOX_ICON) \
 	$(CURDIR)/tools/xbe_add_icon.py $(CURDIR)/tools/xbe_clear_limit64.py
 	@echo "[ ICON     ] $(OUTPUT_DIR)/default.xbe"
-	$(VE)python3 $(CURDIR)/tools/xbe_add_icon.py $(OUTPUT_DIR)/default.xbe \
-		$(CURDIR)/icons/$(FLAVOR)/TitleImage.xbx
+	$(VE)python3 $(CURDIR)/tools/xbe_add_icon.py $(OUTPUT_DIR)/default.xbe $(XBOX_ICON)
 	$(VE)python3 $(CURDIR)/tools/xbe_clear_limit64.py $(OUTPUT_DIR)/default.xbe
 	@touch $@
 all: $(OUTPUT_DIR)/.xbe_icon
 
-.PHONY: oa
+.PHONY: oa ta
 oa: all
+ta: all
 
 # Engine objects sit beside their sources and carry the flavor defines, so a flavor switch
 # rewrites this stamp and rebuilds them.

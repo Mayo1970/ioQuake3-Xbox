@@ -10,6 +10,9 @@
 #ifdef STANDALONEOA
 #define XBOX_TITLE "OpenArena"
 #define XBOX_LOG_PATH "D:\\ioquake3_oa.log"
+#elif defined(MISSIONPACK)
+#define XBOX_TITLE "ioQuake3 Team Arena"
+#define XBOX_LOG_PATH "D:\\ioquake3_ta.log"
 #else
 #define XBOX_TITLE "ioQuake3"
 #define XBOX_LOG_PATH "D:\\ioquake3.log"
@@ -53,11 +56,18 @@ FILE *Sys_XboxOpenGameFile(const char *qpath, const char *mode);
 void Sys_XboxNetInit(void);
 int Sys_XboxNetReady(void);
 int Sys_XboxNetAddress(uint32_t *ip, uint32_t *netmask);
+/* DNS on a worker thread: 1 with the IPv4 address (network order), 0 on failure, -1 while it runs. */
+int Sys_XboxResolveAsync(const char *host, uint32_t *ip);
 
 void Sys_XboxPlatformInit(void);
 void Sys_XboxPlatformShutdown(void);
 
 /* Nonzero when vm.c should load the linked-in module instead of a QVM. */
 int Sys_XboxUseBuiltinModule(const char *name);
+
+/* Q3 (default.xbe) and Team Arena (ta.xbe) share one folder; a game switch to the other one
+   relaunches it and does not return. Its boot appends the commands the launcher passed. */
+void Sys_XboxHandOverGame(const char *game);
+void Sys_XboxAppendLaunchCommands(char *commandLine, int size);
 
 #endif

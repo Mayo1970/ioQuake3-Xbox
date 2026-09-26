@@ -211,9 +211,25 @@ static qboolean XboxShaderReadImage(const char *base, const char *extension,
 	return halved;
 }
 
-/* Texel storage by shader flavor and final size; the result goes to XboxNV2A_CreateImage. */
-static int XboxShaderStorage(int flavor, qboolean picmip, int width, int height)
+#ifdef MISSIONPACK
+/* Font atlases stay 16-bit: DXT blocks would step their antialiased glyph edges. */
+static qboolean XboxShaderIsTextArt(const char *name)
 {
+	return !Q_stricmpn(name, "fonts/", 6) || !Q_stricmpn(name, "menu/art/font", 13) ||
+		!Q_stricmp(name, "gfx/2d/bigchars");
+}
+#endif
+
+/* Texel storage by shader flavor and final size; the result goes to XboxNV2A_CreateImage. */
+static int XboxShaderStorage(const char *name, int flavor, qboolean picmip, int width, int height)
+{
+#ifdef MISSIONPACK
+	/* TA menu art stays loaded in a match and filled the pool: 2D from 128 px goes DXT5/DXT1. */
+	if (flavor == XBOX_NV2A_SHADER_2D && width >= 128 && height >= 128 && !XboxShaderIsTextArt(name))
+		return XBOX_NV2A_IMAGE_DXT;
+#else
+	(void)name;
+#endif
 	/* The 6 MiB pool fills: picmip'd art compresses (2D alpha stays 16-bit), so do big menu images. */
 	if (picmip)
 		return flavor == XBOX_NV2A_SHADER_2D ? XBOX_NV2A_IMAGE_DXT1 : XBOX_NV2A_IMAGE_DXT;
@@ -288,7 +304,7 @@ static int XboxShaderLoadImage(const char *name, qboolean picmip, qboolean mipma
 	for (i = halved ? 1 : 0; picmip && i < XBOX_NV2A_PICMIP; ++i)
 		XboxNV2A_HalveImage(pic, &scaledWidth, &scaledHeight);
 	image = XboxNV2A_CreateImage(base, scaledWidth, scaledHeight, pic,
-		XboxShaderStorage(flavor, picmip, scaledWidth, scaledHeight), mipmap);
+		XboxShaderStorage(base, flavor, picmip, scaledWidth, scaledHeight), mipmap);
 	ri.Free(pic);
 	return image;
 }

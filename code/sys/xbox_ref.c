@@ -143,9 +143,35 @@ static void XboxRefModelBounds(qhandle_t model, vec3_t mins, vec3_t maxs)
 {
 	XboxNV2AModel_Bounds(model, mins, maxs);
 }
+/* TA ui/cgame text: the prebuilt fonts/fontImage_<size>.dat that tr_font.c reads without FreeType.
+   The file is a raw little-endian fontInfo_t, the same layout on this 32-bit target. */
 static void XboxRefRegisterFont(const char *name, int size, fontInfo_t *font)
 {
-	(void)name; (void)size; memset(font, 0, sizeof(*font));
+	char path[MAX_QPATH];
+	void *data;
+	long length;
+	int i;
+
+	memset(font, 0, sizeof(*font));
+	if (!name)
+		return;
+	if (size <= 0)
+		size = 12;
+	Com_sprintf(path, sizeof(path), "fonts/fontImage_%i.dat", size);
+	length = ri.FS_ReadFile(path, &data);
+	if (length != (long)sizeof(*font)) {
+		if (length > 0)
+			ri.FS_FreeFile(data);
+		ri.Printf(PRINT_WARNING, "Xbox ref: no prebuilt font %s\n", path);
+		return;
+	}
+	memcpy(font, data, sizeof(*font));
+	ri.FS_FreeFile(data);
+	Q_strncpyz(font->name, path, sizeof(font->name));
+	for (i = GLYPH_START; i <= GLYPH_END; i++) {
+		font->glyphs[i].shaderName[sizeof(font->glyphs[i].shaderName) - 1] = '\0';
+		font->glyphs[i].glyph = XboxRefRegisterShaderNoMip(font->glyphs[i].shaderName);
+	}
 }
 static void XboxRefRemapShader(const char *oldShader, const char *newShader,
 	const char *offsetTime)

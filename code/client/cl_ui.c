@@ -23,6 +23,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 
 #include "../botlib/botlib.h"
+#ifdef XBOX
+#include "../sys/sys_xbox.h"
+#endif
 
 extern	botlib_export_t	*botlib_export;
 
@@ -1109,7 +1112,13 @@ void CL_InitUI( void ) {
 
 	// load the dll or bytecode
 	interpret = Cvar_VariableValue("vm_ui");
+#ifdef XBOX
+	// The linked-in ui replaces a stock id ui.qvm on pure servers too.
+	if(cl_connectedToPureServer && !(interpret == VMI_NATIVE &&
+		Sys_XboxUseBuiltinModule("ui") && FS_XboxStockVM("ui")))
+#else
 	if(cl_connectedToPureServer)
+#endif
 	{
 		// if sv_pure is set we only allow qvms to be loaded
 		if(interpret != VMI_COMPILED && interpret != VMI_BYTECODE)

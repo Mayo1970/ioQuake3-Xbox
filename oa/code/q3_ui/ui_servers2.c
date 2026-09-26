@@ -20,13 +20,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 //
-/*
-=======================================================================
-
-MULTIPLAYER MENU (SERVER BROWSER)
-
-=======================================================================
-*/
 
 
 #include "ui_local.h"
@@ -272,9 +265,7 @@ static int				g_fullservers;
 static int				g_onlyhumans;
 static int                              g_hideprivate;
 
-/*
- *Removes illigal chars but keeps colors
- */
+// Removes illegal chars but keeps colors
 char *Q_CleanStrWithColor( char *string ) {
 	char*	d;
 	char*	s;
@@ -297,11 +288,6 @@ char *Q_CleanStrWithColor( char *string ) {
 }
 
 
-/*
-=================
-ArenaServers_MaxPing
-=================
-*/
 static int ArenaServers_MaxPing( void ) {
 	int		maxPing;
 
@@ -313,11 +299,6 @@ static int ArenaServers_MaxPing( void ) {
 }
 
 
-/*
-=================
-ArenaServers_Compare
-=================
-*/
 static int QDECL ArenaServers_Compare( const void *arg1, const void *arg2 ) {
 	float			f1;
 	float			f2;
@@ -388,11 +369,6 @@ static int QDECL ArenaServers_Compare( const void *arg1, const void *arg2 ) {
 }
 
 
-/*
-=================
-ArenaServers_Go
-=================
-*/
 static void ArenaServers_Go( void ) {
 	servernode_t*	servernode;
 
@@ -407,11 +383,6 @@ static void ArenaServers_Go( void ) {
 }
 
 
-/*
-=================
-ArenaServers_UpdatePicture
-=================
-*/
 static void ArenaServers_UpdatePicture( void ) {
 	static char		picname[64];
 	servernode_t*	servernodeptr;
@@ -430,14 +401,8 @@ static void ArenaServers_UpdatePicture( void ) {
 	g_arenaservers.mappic.shader = 0;
 }
 
-/*
-=================
-	Q_strcpyColor - This function will return the real length of the string if numChars
-		len of character data is desired. It looks for color codes and adds 2 to the length
-		for each combo found. This is used to make color strings show up correctly in column
-		formatted environments. Otherwise, the columns will be off 2 * num of color codes.
-=================
-*/
+// Copies numChars visible chars and returns the real length: each color code adds 2,
+// so color strings line up in columns (else they are off by 2 per color code)
 int Q_strcpyColor( const char *src, char *dest, int numChars )
 {
 int count, len;
@@ -482,11 +447,6 @@ const char *s;
 }
 
 
-/*
-=================
-ArenaServers_UpdateMenu
-=================
-*/
 static void ArenaServers_UpdateMenu( void ) {
 	int				i;
 	int				j;
@@ -702,12 +662,6 @@ static void ArenaServers_UpdateMenu( void ) {
 			pingColor = S_COLOR_RED;
 		}
 
-                /*
-		Com_sprintf( buff, MAX_LISTBOXWIDTH, "%-20.20s %-12.12s %2d/%2d %-8.8s %3s %s%3d ", 
-			servernodeptr->hostname, servernodeptr->mapname, servernodeptr->numclients,
- 			servernodeptr->maxclients, servernodeptr->gamename,
-			netnames[servernodeptr->nettype], pingColor, servernodeptr->pingtime ); //, servernodeptr->bPB ? "Yes" : "No"
-                 */
                 b = buff;
                 *b++ = '^';
                 *b++ = '7';
@@ -748,11 +702,6 @@ static void ArenaServers_UpdateMenu( void ) {
 }
 
 
-/*
-=================
-ArenaServers_Remove
-=================
-*/
 static void ArenaServers_Remove( void )
 {
 	int				i;
@@ -762,11 +711,9 @@ static void ArenaServers_Remove( void )
 	if (!g_arenaservers.list.numitems)
 		return;
 
-	// remove selected item from display list
-	// items are in scattered order due to sort and cull
-	// perform delete on list box contents, resync all lists
-
-	tableptr      = &g_arenaservers.table[g_arenaservers.list.curvalue];
+	// Items are in scattered order after sort and cull, so delete the selected one
+	// from the list box contents and resync all lists
+	tableptr     = &g_arenaservers.table[g_arenaservers.list.curvalue];
 	servernodeptr = tableptr->servernode;
 
         // find address in master list
@@ -808,11 +755,6 @@ static void ArenaServers_Remove( void )
 }
 
 
-/*
-=================
-ArenaServers_Insert
-=================
-*/
 static void ArenaServers_Insert( char* adrstr, char* info, int pingtime )
 {
 	servernode_t*	servernodeptr;
@@ -890,13 +832,7 @@ static void ArenaServers_Insert( char* adrstr, char* info, int pingtime )
 }
 
 
-/*
-=================
-ArenaServers_InsertFavorites
-
-Insert nonresponsive address book entries into display lists.
-=================
-*/
+// Inserts nonresponsive address book entries into the display lists
 void ArenaServers_InsertFavorites( void )
 {
 	int		i;
@@ -922,13 +858,7 @@ void ArenaServers_InsertFavorites( void )
 }
 
 
-/*
-=================
-ArenaServers_LoadFavorites
-
-Load cvar address book entries into local lists.
-=================
-*/
+// Loads the cvar address book entries into local lists
 void ArenaServers_LoadFavorites( void )
 {
 	int				i;
@@ -962,9 +892,8 @@ void ArenaServers_LoadFavorites( void )
 		if (adrstr[0] < '0' || adrstr[0] > '9')
 			continue;
 
-		// favorite server addresses must be maintained outside refresh list
-		// this mimics local and global netadr's stored in client
-		// these can be fetched to fill ping list
+		// Favorite addresses live outside the refresh list, like the client's local and global
+		// netadrs, so they can be fetched to fill the ping list
 		strcpy( g_arenaservers.favoriteaddresses[g_numfavoriteservers], adrstr );
 
 		// find this server in the old list
@@ -999,11 +928,6 @@ void ArenaServers_LoadFavorites( void )
 }
 
 
-/*
-=================
-ArenaServers_StopRefresh
-=================
-*/
 static void ArenaServers_StopRefresh( void )
 {
 	if (!g_arenaservers.refreshservers)
@@ -1032,11 +956,6 @@ static void ArenaServers_StopRefresh( void )
 }
 
 
-/*
-=================
-ArenaServers_DoRefresh
-=================
-*/
 static void ArenaServers_DoRefresh( void )
 {
 	int		i;
@@ -1045,6 +964,15 @@ static void ArenaServers_DoRefresh( void )
 	int		maxPing;
 	char	adrstr[MAX_ADDRESSLENGTH];
 	char	info[MAX_INFO_STRING];
+
+#ifdef XBOX
+	// The first master DNS lookup can outlast the 5 s window: wait up to 15 s while the count is -1
+	if (g_servertype >= UIAS_GLOBAL1 && g_servertype <= UIAS_GLOBAL5 &&
+		uis.realtime < g_arenaservers.refreshtime + 10000 &&
+		trap_LAN_GetServerCount(g_servertype) < 0) {
+		return;
+	}
+#endif
 
 	if (uis.realtime < g_arenaservers.refreshtime)
 	{
@@ -1180,11 +1108,6 @@ static void ArenaServers_DoRefresh( void )
 }
 
 
-/*
-=================
-ArenaServers_StartRefresh
-=================
-*/
 static void ArenaServers_StartRefresh( void )
 {
 	int		i;
@@ -1280,11 +1203,6 @@ static void ArenaServers_StartRefresh( void )
 }
 
 
-/*
-=================
-ArenaServers_SaveChanges
-=================
-*/
 void ArenaServers_SaveChanges( void )
 {
 	int	i;
@@ -1297,11 +1215,6 @@ void ArenaServers_SaveChanges( void )
 }
 
 
-/*
-=================
-ArenaServers_Sort
-=================
-*/
 void ArenaServers_Sort( int type ) {
 	if( g_sortkey == type ) {
 		return;
@@ -1312,11 +1225,6 @@ void ArenaServers_Sort( int type ) {
 }
 
 
-/*
-=================
-ArenaServers_SetType
-=================
-*/
 int ArenaServers_SetType( int type )
 {
 	if(type >= UIAS_GLOBAL1 && type <= UIAS_GLOBAL5)
@@ -1379,11 +1287,6 @@ int ArenaServers_SetType( int type )
 	return type;
 }
 
-/*
-=================
-ArenaServers_Event
-=================
-*/
 static void ArenaServers_Event( void* ptr, int event ) {
 	int		id;
 
@@ -1479,11 +1382,6 @@ static void ArenaServers_Event( void* ptr, int event ) {
 }
 
 
-/*
-=================
-ArenaServers_MenuDraw
-=================
-*/
 static void ArenaServers_MenuDraw( void )
 {
 	if (g_arenaservers.refreshservers)
@@ -1493,11 +1391,6 @@ static void ArenaServers_MenuDraw( void )
 }
 
 
-/*
-=================
-ArenaServers_MenuKey
-=================
-*/
 static sfxHandle_t ArenaServers_MenuKey( int key ) {
 	if( key == K_SPACE  && g_arenaservers.refreshservers ) {
 		ArenaServers_StopRefresh();	
@@ -1529,11 +1422,6 @@ static sfxHandle_t ArenaServers_MenuKey( int key ) {
 }
 
 
-/*
-=================
-ArenaServers_MenuInit
-=================
-*/
 static void ArenaServers_MenuInit( void ) {
 	int			i;
 	int			y;
@@ -1816,11 +1704,6 @@ static void ArenaServers_MenuInit( void ) {
 }
 
 
-/*
-=================
-ArenaServers_Cache
-=================
-*/
 void ArenaServers_Cache( void ) {
 	trap_R_RegisterShaderNoMip( ART_BACK0 );
 	trap_R_RegisterShaderNoMip( ART_BACK1 );
@@ -1839,11 +1722,6 @@ void ArenaServers_Cache( void ) {
 }
 
 
-/*
-=================
-UI_ArenaServersMenu
-=================
-*/
 void UI_ArenaServersMenu( void ) {
 	ArenaServers_MenuInit();
 	UI_PushMenu( &g_arenaservers.menu );

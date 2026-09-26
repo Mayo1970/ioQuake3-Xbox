@@ -1483,6 +1483,54 @@ int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, i
 	return -1;
 }
 
+#ifdef XBOX
+#ifdef STANDALONEOA
+// baseoa/pak6-patch088.pk3, the OA 0.8.8 QVMs that oa/ builds natively.
+static const unsigned int oa_vm_checksums[] = { 3601704695u };
+#endif
+
+/* Pure servers check the cgame/ui pak refs. A stock QVM pak gets them without a load,
+   so the linked-in module can run in its place; any other QVM returns qfalse. */
+qboolean FS_XboxStockVM(const char *name)
+{
+	searchpath_t *search;
+	char qvmName[MAX_QPATH];
+	const unsigned int *sums;
+	int numSums, i;
+
+#if defined(STANDALONEOA)
+	sums = oa_vm_checksums;
+	numSums = ARRAY_LEN(oa_vm_checksums);
+#elif defined(MISSIONPACK)
+	sums = missionpak_checksums;
+	numSums = ARRAY_LEN(missionpak_checksums);
+#else
+	sums = pak_checksums;
+	numSums = ARRAY_LEN(pak_checksums);
+#endif
+	Com_sprintf(qvmName, sizeof(qvmName), "vm/%s.qvm", name);
+
+	for(search = fs_searchpaths; search; search = search->next)
+	{
+		if(!search->pack || !FS_PakIsPure(search->pack) ||
+		   FS_FOpenFileReadDir(qvmName, search, NULL, qfalse, qfalse) <= 0)
+			continue;
+
+		for(i = 0; i < numSums; i++)
+		{
+			if(search->pack->checksum == sums[i])
+			{
+				search->pack->referenced |= FS_GENERAL_REF |
+					(!Q_stricmp(name, "cgame") ? FS_CGAME_REF : FS_UI_REF);
+				return qtrue;
+			}
+		}
+		return qfalse;
+	}
+	return qfalse;
+}
+#endif
+
 /*
 =================
 FS_Read

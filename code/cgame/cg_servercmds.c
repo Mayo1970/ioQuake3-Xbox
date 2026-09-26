@@ -19,10 +19,8 @@ along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
-//
-// cg_servercmds.c -- reliably sequenced text commands sent by the server
-// these are processed at snapshot transition time, so there will definitely
-// be a valid snapshot this frame
+// cg_servercmds.c -- reliably sequenced text commands from the server, processed at
+// snapshot transition time, so there is always a valid snapshot this frame
 
 #include "cg_local.h"
 #ifdef MISSIONPACK
@@ -58,12 +56,6 @@ static int CG_ValidOrder(const char *p) {
 }
 #endif
 
-/*
-=================
-CG_ParseScores
-
-=================
-*/
 static void CG_ParseScores( void ) {
 	int		i, powerups;
 
@@ -107,12 +99,6 @@ static void CG_ParseScores( void ) {
 
 }
 
-/*
-=================
-CG_ParseTeamInfo
-
-=================
-*/
 static void CG_ParseTeamInfo( void ) {
 	int		i;
 	int		client;
@@ -144,14 +130,7 @@ static void CG_ParseTeamInfo( void ) {
 }
 
 
-/*
-================
-CG_ParseServerinfo
-
-This is called explicitly when the gamestate is first received,
-and whenever the server updates any serverinfo flagged cvars
-================
-*/
+// Called when the gamestate is first received and when serverinfo-flagged cvars change
 void CG_ParseServerinfo( void ) {
 	const char	*info;
 	char	*mapname;
@@ -173,11 +152,6 @@ void CG_ParseServerinfo( void ) {
 	trap_Cvar_Set("g_blueTeam", cgs.blueTeam);
 }
 
-/*
-==================
-CG_ParseWarmup
-==================
-*/
 static void CG_ParseWarmup( void ) {
 	const char	*info;
 	int			warmup;
@@ -203,13 +177,7 @@ static void CG_ParseWarmup( void ) {
 	cg.warmup = warmup;
 }
 
-/*
-================
-CG_SetConfigValues
-
-Called on load to set the initial values from configure strings
-================
-*/
+// Called on load to set the initial values from the configstrings
 void CG_SetConfigValues( void ) {
 	const char *s;
 
@@ -230,11 +198,6 @@ void CG_SetConfigValues( void ) {
 	cg.warmup = atoi( CG_ConfigString( CS_WARMUP ) );
 }
 
-/*
-=====================
-CG_ShaderStateChanged
-=====================
-*/
 void CG_ShaderStateChanged(void) {
 	char originalShader[MAX_QPATH];
 	char newShader[MAX_QPATH];
@@ -280,12 +243,6 @@ void CG_ShaderStateChanged(void) {
 	}
 }
 
-/*
-================
-CG_ConfigStringModified
-
-================
-*/
 static void CG_ConfigStringModified( void ) {
 	const char	*str;
 	int		num;
@@ -370,12 +327,6 @@ static void CG_ConfigStringModified( void ) {
 }
 
 
-/*
-=======================
-CG_AddToTeamChat
-
-=======================
-*/
 static void CG_AddToTeamChat( const char *str ) {
 	int len;
 	char *p, *ls;
@@ -443,17 +394,8 @@ static void CG_AddToTeamChat( const char *str ) {
 		cgs.teamLastChatPos = cgs.teamChatPos - chatHeight;
 }
 
-/*
-===============
-CG_MapRestart
-
-The server has issued a map_restart, so the next snapshot
-is completely new and should not be interpolated to.
-
-A tournement restart will clear everything, but doesn't
-require a reload of all the media
-===============
-*/
+// The next snapshot after a map_restart is new and not interpolated; a tournament
+// restart clears everything but keeps the media
 static void CG_MapRestart( void ) {
 	if ( cg_showmiss.integer ) {
 		CG_Printf( "CG_MapRestart\n" );
@@ -503,8 +445,14 @@ static void CG_MapRestart( void ) {
 #define MAX_VOICEFILESIZE	16384
 #define MAX_VOICEFILES		8
 #define MAX_VOICECHATS		64
+#ifdef XBOX
+// TA's 8 .voice files use at most 17 sounds per chat and 36-char texts; saves 1.6 MiB of bss
+#define MAX_VOICESOUNDS		24
+#define MAX_CHATSIZE		48
+#else
 #define MAX_VOICESOUNDS		64
 #define MAX_CHATSIZE		64
+#endif
 #define MAX_HEADMODELS		64
 
 typedef struct voiceChat_s
@@ -532,11 +480,6 @@ typedef struct headModelVoiceChat_s
 voiceChatList_t voiceChatLists[MAX_VOICEFILES];
 headModelVoiceChat_t headModelVoiceChat[MAX_HEADMODELS];
 
-/*
-=================
-CG_ParseVoiceChats
-=================
-*/
 int CG_ParseVoiceChats( const char *filename, voiceChatList_t *voiceChatList, int maxVoiceChats ) {
 	int	len, i;
 	fileHandle_t f;
@@ -633,11 +576,6 @@ int CG_ParseVoiceChats( const char *filename, voiceChatList_t *voiceChatList, in
 	return qtrue;
 }
 
-/*
-=================
-CG_LoadVoiceChats
-=================
-*/
 void CG_LoadVoiceChats( void ) {
 	int size;
 
@@ -653,11 +591,6 @@ void CG_LoadVoiceChats( void ) {
 	CG_Printf("voice chat memory size = %d\n", size - trap_MemoryRemaining());
 }
 
-/*
-=================
-CG_HeadModelVoiceChats
-=================
-*/
 int CG_HeadModelVoiceChats( char *filename ) {
 	int	len, i;
 	fileHandle_t f;
@@ -700,11 +633,6 @@ int CG_HeadModelVoiceChats( char *filename ) {
 }
 
 
-/*
-=================
-CG_GetVoiceChat
-=================
-*/
 int CG_GetVoiceChat( voiceChatList_t *voiceChatList, const char *id, sfxHandle_t *snd, char **chat) {
 	int i, rnd;
 
@@ -719,11 +647,6 @@ int CG_GetVoiceChat( voiceChatList_t *voiceChatList, const char *id, sfxHandle_t
 	return qfalse;
 }
 
-/*
-=================
-CG_VoiceChatListForClient
-=================
-*/
 voiceChatList_t *CG_VoiceChatListForClient( int clientNum ) {
 	clientInfo_t *ci;
 	int voiceChatNum, i, j, k, gender;
@@ -824,11 +747,6 @@ typedef struct bufferedVoiceChat_s
 
 bufferedVoiceChat_t voiceChatBuffer[MAX_VOICECHATBUFFER];
 
-/*
-=================
-CG_PlayVoiceChat
-=================
-*/
 void CG_PlayVoiceChat( bufferedVoiceChat_t *vchat ) {
 	// if we are going into the intermission, don't start any voices
 	if ( cg.intermissionStarted ) {
@@ -856,11 +774,6 @@ void CG_PlayVoiceChat( bufferedVoiceChat_t *vchat ) {
 	voiceChatBuffer[cg.voiceChatBufferOut].snd = 0;
 }
 
-/*
-=====================
-CG_PlayBufferedVoieChats
-=====================
-*/
 void CG_PlayBufferedVoiceChats( void ) {
 	if ( cg.voiceChatTime < cg.time ) {
 		if (cg.voiceChatBufferOut != cg.voiceChatBufferIn && voiceChatBuffer[cg.voiceChatBufferOut].snd) {
@@ -873,11 +786,6 @@ void CG_PlayBufferedVoiceChats( void ) {
 	}
 }
 
-/*
-=====================
-CG_AddBufferedVoiceChat
-=====================
-*/
 void CG_AddBufferedVoiceChat( bufferedVoiceChat_t *vchat ) {
 	// if we are going into the intermission, don't start any voices
 	if ( cg.intermissionStarted ) {
@@ -892,11 +800,6 @@ void CG_AddBufferedVoiceChat( bufferedVoiceChat_t *vchat ) {
 	}
 }
 
-/*
-=================
-CG_VoiceChatLocal
-=================
-*/
 void CG_VoiceChatLocal( int mode, qboolean voiceOnly, int clientNum, int color, const char *cmd ) {
 	char *chat;
 	voiceChatList_t *voiceChatList;
@@ -940,11 +843,6 @@ void CG_VoiceChatLocal( int mode, qboolean voiceOnly, int clientNum, int color, 
 	}
 }
 
-/*
-=================
-CG_VoiceChat
-=================
-*/
 void CG_VoiceChat( int mode ) {
 	const char *cmd;
 	int clientNum, color;
@@ -967,11 +865,6 @@ void CG_VoiceChat( int mode ) {
 }
 #endif // MISSIONPACK
 
-/*
-=================
-CG_RemoveChatEscapeChar
-=================
-*/
 static void CG_RemoveChatEscapeChar( char *text ) {
 	int i, l;
 
@@ -984,14 +877,7 @@ static void CG_RemoveChatEscapeChar( char *text ) {
 	text[l] = '\0';
 }
 
-/*
-=================
-CG_ServerCommand
-
-The string has been tokenized and can be retrieved with
-Cmd_Argc() / Cmd_Argv()
-=================
-*/
+// The command is already tokenized; read it with Cmd_Argc() / Cmd_Argv()
 static void CG_ServerCommand( void ) {
 	const char	*cmd;
 	char		text[MAX_SAY_TEXT];
@@ -1115,14 +1001,7 @@ static void CG_ServerCommand( void ) {
 }
 
 
-/*
-====================
-CG_ExecuteNewServerCommands
-
-Execute all of the server commands that were received along
-with this this snapshot.
-====================
-*/
+// Executes all the server commands that came with this snapshot
 void CG_ExecuteNewServerCommands( int latestSequence ) {
 	while ( cgs.serverCommandSequence < latestSequence ) {
 		if ( trap_GetServerCommand( ++cgs.serverCommandSequence ) ) {

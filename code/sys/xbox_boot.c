@@ -9,7 +9,12 @@
 
 /* 20, not 24: the native modules add ~4 MiB to the XBE image but no longer use the hunk. */
 #define XBOX_COM_HUNK_MEGS 20
+#ifdef MISSIONPACK
+/* TA menus use ~1 MiB of zone and Q3 games peaked at ~3 MiB; the TA image is 4 MiB larger. */
+#define XBOX_COM_ZONE_MEGS 6
+#else
 #define XBOX_COM_ZONE_MEGS 8
+#endif
 /* 1536 sound chunks (~3 MiB); 2 ran out of memory on Q3DM11, so snd_dma.c stores mono sounds as ADPCM. */
 #define XBOX_COM_SOUND_MEGS 1
 
@@ -30,7 +35,8 @@ static void XboxLogConnect(const char *tag)
 
 int main(void)
 {
-	char commandLine[] =
+	/* Room for the launch commands another XBE of this port passed (xbox_launch.c). */
+	char commandLine[1024] =
 		"+set com_hunkMegs " XBOX_STRINGIFY(XBOX_COM_HUNK_MEGS)
 		" +set com_zoneMegs " XBOX_STRINGIFY(XBOX_COM_ZONE_MEGS)
 		" +set com_soundMegs " XBOX_STRINGIFY(XBOX_COM_SOUND_MEGS)
@@ -39,6 +45,10 @@ int main(void)
 		/* Linked-in native modules; overrides archived vm_* values. A pure server
 		   drops clients without cgame/ui QVM pak refs, as on the PSP port. */
 		" +set vm_game 0 +set vm_cgame 0 +set vm_ui 0 +set sv_pure 0"
+#ifdef MISSIONPACK
+		/* The Team Arena XBE's native modules are the missionpack ones. */
+		" +set fs_game " BASETA
+#endif
 #ifdef XBOX_DIAG_NO_CINEMATIC
 		/* DIAGNOSTIC bisection switch: any non-set command skips idlogo.RoQ. */
 		" +wait"
@@ -49,6 +59,7 @@ int main(void)
 	XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
 	Sys_XboxLogOpen();
 	Sys_XboxLog(XBOX_TITLE "\n");
+	Sys_XboxAppendLaunchCommands(commandLine, sizeof(commandLine));
 	{
 		unsigned int physicalMegs = Sys_XboxPhysicalMegs();
 
